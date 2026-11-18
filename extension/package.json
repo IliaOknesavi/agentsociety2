@@ -890,7 +890,7 @@
     "@deck.gl/core": "^9.4.0",
     "@deck.gl/layers": "^9.4.0",
     "@deck.gl/react": "^9.4.0",
-    "@deck.gl/widgets": "^9.4.0",
+    "@deck.gl/widgets": "^9.4.1",
     "@luma.gl/webgpu": "^9.4.1",
     "antd": "~6.6.8",
     "dayjs": "^1.11.23",
