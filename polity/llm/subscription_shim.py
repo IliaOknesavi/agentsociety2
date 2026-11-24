@@ -1,17 +1,19 @@
-"""OpenAI-совместимая прокладка к моделям по подписке: Claude (`claude -p`) и Codex (`codex app-server`).
+"""OpenAI-совместимая прокладка к моделям по подписке: Claude (`claude -p`), ChatGPT напрямую и Codex CLI.
 
 AgentSociety 2 ходит в модель по HTTP через LiteLLM (`POST /v1/chat/completions`). Прокладка принимает
-такой запрос, выполняет его одним вызовом CLI и возвращает ответ в формате OpenAI, включая `tool_calls`.
-Ответы кэшируются: повтор прогона с теми же промптами не тратит квоту и даёт те же ответы.
+такой запрос, выполняет его одним вызовом модели по подписке и возвращает ответ в формате OpenAI,
+включая `tool_calls`. Ответы кэшируются: повтор прогона с теми же промптами не тратит квоту и даёт
+те же ответы.
 
-Модель выбирается именем в запросе: `haiku`, `sonnet`, `opus` идут в Claude; `codex` (модель Codex
-по умолчанию) и `codex/<имя>` идут в Codex.
+Модель выбирается именем в запросе: `haiku`, `sonnet`, `opus` идут в Claude; `chatgpt/<имя>` идёт
+в подписку ChatGPT напрямую (провайдер `chatgpt/` в LiteLLM, нужен пакет litellm из окружения каркаса);
+`codex` (модель Codex по умолчанию) и `codex/<имя>` идут через Codex CLI.
 
 Запуск:              python subscription_shim.py [порт]
 Проверка без модели: python subscription_shim.py --selftest
 Счётчики:            GET /stats
 Настройки (переменные окружения): SHIM_CACHE, SHIM_LOG, SHIM_PROMPTS, SHIM_MAX_CALLS,
-SHIM_CONCURRENCY, SHIM_TIMEOUT, SHIM_EFFORT, SHIM_CODEX_HOME, SHIM_CODEX_MODE.
+SHIM_CONCURRENCY, SHIM_TIMEOUT, SHIM_EFFORT, SHIM_MODEL_NAME, SHIM_CODEX_HOME, SHIM_CODEX_MODE.
 """
 
 from __future__ import annotations
@@ -38,6 +40,9 @@ PROMPTS_PATH = os.getenv("SHIM_PROMPTS")  # полный текст запрос
 MAX_CALLS = int(os.getenv("SHIM_MAX_CALLS", "0"))  # предел настоящих вызовов модели, 0: без предела
 TIMEOUT = float(os.getenv("SHIM_TIMEOUT", "240"))
 EFFORT = os.getenv("SHIM_EFFORT", "low")
+# Имя модели для путей chatgpt и codex. Каркасу его показывать нельзя: его клиент LiteLLM сверяет параметры
+# запроса с именем модели и у незнакомых имён семейства GPT отвергает tool_choice. Каркас шлёт только путь.
+MODEL_NAME = os.getenv("SHIM_MODEL_NAME")
 # Отдельная папка настроек Codex для симуляций: без личного AGENTS.md, навыков и плагинов.
 # Заводится один раз командой `CODEX_HOME=<папка> codex login`.
 CODEX_HOME = os.getenv("SHIM_CODEX_HOME")
@@ -47,6 +52,10 @@ LOCK = threading.Lock()
 STATS = {"calls": 0, "cache_hits": 0, "cost_usd": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "seconds": 0.0}
 # CLI подмешивает в запрос то, что находит в рабочей папке (память Claude Code, AGENTS.md), поэтому папка пустая
 EMPTY_CWD = Path(tempfile.gettempdir()) / "polity-subscription-empty"
+
+# Провайдер `chatgpt/` в LiteLLM ставит перед нашим системным промптом инструкцию Codex (около 1 650 токенов),
+# если её текста в промпте нет. Пробел есть в любом промпте, поэтому агент получает только наш текст.
+os.environ.setdefault("CHATGPT_DEFAULT_INSTRUCTIONS", " ")
 
 # Блоки, которые Codex добавляет в запрос сам: отключаем всё, что отключается настройками.
 CODEX_QUIET = [
@@ -380,6 +389,36 @@ def ask_codex_exec(model: str, system: str, user: str, schema: dict | None) -> d
         return _retry(run)
 
 
+def ask_chatgpt(model: str, body: dict) -> dict:
+    """Прямой путь к подписке ChatGPT: сообщения и инструменты уходят как есть, вызов функций настоящий."""
+    if "/" not in model:
+        raise RuntimeError("не задано имя модели: MODEL=chatgpt/<имя> для скрипта запуска или SHIM_MODEL_NAME")
+    import litellm  # нужен только этому пути; вход по коду устройства описан в polity/README.md
+
+    litellm.suppress_debug_info = True
+    extra = {"tools": body["tools"], "tool_choice": body.get("tool_choice", "auto")} if body.get("tools") else {}
+
+    def run() -> dict:
+        try:
+            done = litellm.completion(model=model, messages=body.get("messages") or [], reasoning_effort=EFFORT,
+                                      timeout=TIMEOUT, **extra)
+            message, usage = done.choices[0].message, done.usage
+            calls = [{"name": c.function.name, "arguments": json.loads(c.function.arguments or "{}")}
+                     for c in (message.tool_calls or [])]
+        except Exception as exc:  # сеть, отказ сервера, аргументы не JSON: повторяем
+            raise RuntimeError(f"{type(exc).__name__}: {exc}") from None
+        cached = int(getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0)
+        return {
+            "result": message.content or "",
+            "structured_output": {"tool_calls": calls},
+            "total_cost_usd": 0.0,  # по подписке цена не сообщается
+            "usage": {"input_tokens": int(usage.prompt_tokens) - cached, "cache_read_input_tokens": cached,
+                      "output_tokens": int(usage.completion_tokens)},
+        }
+
+    return _retry(run)
+
+
 def ask_model(model: str, system: str, user: str, schema: dict | None) -> dict:
     EMPTY_CWD.mkdir(exist_ok=True)
     return (ask_codex if model.startswith("codex") else ask_claude)(model, system, user, schema)
@@ -405,12 +444,19 @@ def cache_put(key: str, value: dict) -> None:
 
 def complete(body: dict) -> dict:
     model = str(body.get("model") or "haiku")
-    model = model if model.startswith("codex") else model.split("/")[-1]  # LiteLLM шлёт имя без префикса провайдера
+    # LiteLLM шлёт имя без префикса провайдера; у Codex и ChatGPT префикс наш и выбирает путь
+    model = model if model.startswith(("codex", "chatgpt")) else model.split("/")[-1]
+    if model in ("codex", "chatgpt") and MODEL_NAME:
+        model = f"{model}/{MODEL_NAME}"
+    direct = model.startswith("chatgpt")  # настоящий вызов функций: протокол в промпт не дописываем
     system, user = render(body.get("messages") or [])
     schema = None
     if body.get("tools"):
         contract, schema = tool_contract(body["tools"])
-        system = f"{system}\n\n{contract}"
+        if direct:
+            schema = [body["tools"], body.get("tool_choice", "auto")]  # в ключ кэша идут описания инструментов
+        else:
+            system = f"{system}\n\n{contract}"
     key = hashlib.sha256(json.dumps([model, EFFORT, system, user, schema], ensure_ascii=False).encode()).hexdigest()
     if (cached := cache_get(key)) is not None:
         with LOCK:
@@ -423,7 +469,7 @@ def complete(body: dict) -> dict:
         STATS["calls"] += 1
     started = time.time()
     with SEMAPHORE:
-        data = ask_model(model, system, user, schema)
+        data = ask_chatgpt(model, body) if direct else ask_model(model, system, user, schema)
     usage = data.get("usage") or {}
     cached_tokens = int(usage.get("cache_read_input_tokens", 0))
     prompt_tokens = int(usage.get("input_tokens", 0)) + int(usage.get("cache_creation_input_tokens", 0)) + cached_tokens
@@ -522,9 +568,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def selftest() -> None:
     """Кэш, выбор модели и предел вызовов на подменной модели, без CLI и без сети."""
-    global CACHE_PATH, LOG_PATH, MAX_CALLS, ask_claude, ask_codex
+    global CACHE_PATH, LOG_PATH, MAX_CALLS, ask_claude, ask_codex, ask_chatgpt
     with tempfile.TemporaryDirectory() as tmp:
-        CACHE_PATH, LOG_PATH, MAX_CALLS = Path(tmp) / "c.sqlite", Path(tmp) / "calls.jsonl", 3
+        CACHE_PATH, LOG_PATH, MAX_CALLS = Path(tmp) / "c.sqlite", Path(tmp) / "calls.jsonl", 5
         asked = []
 
         def fake(backend):
@@ -545,13 +591,19 @@ def selftest() -> None:
         assert complete({"model": "haiku", "messages": [{"role": "user", "content": "capital?"}]})["choices"][0]["message"]["content"] == "Paris"
         complete({**body, "model": "codex/gpt-test"})
         assert [a[:2] for a in asked] == [("claude", "haiku"), ("claude", "haiku"), ("codex", "codex/gpt-test")]
-        assert STATS["calls"] == 3 and STATS["cache_hits"] == 1
+        # прямой путь: сообщения уходят как есть, смена описания инструмента меняет ключ кэша
+        ask_chatgpt = lambda model, body: fake("chatgpt")(model, None, body["messages"][-1]["content"], body.get("tools"))
+        direct = {**body, "model": "chatgpt/gpt-test"}
+        renamed = [{"type": "function", "function": {"name": "finish", "description": "new", "parameters": {"type": "object"}}}]
+        assert complete(direct) == complete(direct) and complete({**direct, "tools": renamed})
+        assert [a[:2] for a in asked[3:]] == [("chatgpt", "chatgpt/gpt-test")] * 2
+        assert STATS["calls"] == 5 and STATS["cache_hits"] == 2
         try:
-            complete({"model": "haiku", "messages": [{"role": "user", "content": "fourth"}]})
+            complete({"model": "haiku", "messages": [{"role": "user", "content": "over the limit"}]})
         except CallLimit:
             pass
         else:
-            raise AssertionError("четвёртый настоящий вызов должен упереться в предел")
+            raise AssertionError("вызов сверх предела должен быть отклонён")
     print("selftest: ok")
 
 

@@ -6,6 +6,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PY="$(dirname "$HERE")/.venv/bin/python"
 MODEL="${MODEL:-haiku}"
+# Каркас видит только путь (chatgpt, codex), имя модели после косой черты получает одна прокладка:
+# клиент LiteLLM в каркасе отвергает tool_choice у имён моделей GPT, которых нет в его встроенной карте.
+ROUTE="${MODEL%%/*}"
+[[ "$MODEL" == */* ]] && export SHIM_MODEL_NAME="${MODEL#*/}"
 PORT="${PORT:-18765}"
 SCRIPT="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 shift
@@ -24,6 +28,6 @@ done
 env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy -u ALL_PROXY -u all_proxy \
   AGENTSOCIETY_LLM_API_KEY=local \
   AGENTSOCIETY_LLM_API_BASE="http://127.0.0.1:$PORT/v1" \
-  AGENTSOCIETY_LLM_MODEL="$MODEL" \
+  AGENTSOCIETY_LLM_MODEL="$ROUTE" \
   AGENTSOCIETY_LLM_REQUEST_TIMEOUT=300 \
   "$PY" "$SCRIPT" "$@"
