@@ -1,4 +1,4 @@
-"""OpenAI-совместимая прокладка к моделям по подписке: Claude (`claude -p`) и Codex (`codex exec`).
+"""OpenAI-совместимая прокладка к моделям по подписке: Claude (`claude -p`) и Codex (`codex app-server`).
 
 AgentSociety 2 ходит в модель по HTTP через LiteLLM (`POST /v1/chat/completions`). Прокладка принимает
 такой запрос, выполняет его одним вызовом CLI и возвращает ответ в формате OpenAI, включая `tool_calls`.
@@ -11,7 +11,7 @@ AgentSociety 2 ходит в модель по HTTP через LiteLLM (`POST /v
 Проверка без модели: python subscription_shim.py --selftest
 Счётчики:            GET /stats
 Настройки (переменные окружения): SHIM_CACHE, SHIM_LOG, SHIM_PROMPTS, SHIM_MAX_CALLS,
-SHIM_CONCURRENCY, SHIM_TIMEOUT, SHIM_EFFORT, SHIM_CODEX_HOME.
+SHIM_CONCURRENCY, SHIM_TIMEOUT, SHIM_EFFORT, SHIM_CODEX_HOME, SHIM_CODEX_MODE.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import glob
 import hashlib
 import json
 import os
+import queue
 import shutil
 import sqlite3
 import subprocess
@@ -40,6 +41,7 @@ EFFORT = os.getenv("SHIM_EFFORT", "low")
 # Отдельная папка настроек Codex для симуляций: без личного AGENTS.md, навыков и плагинов.
 # Заводится один раз командой `CODEX_HOME=<папка> codex login`.
 CODEX_HOME = os.getenv("SHIM_CODEX_HOME")
+CODEX_MODE = os.getenv("SHIM_CODEX_MODE", "app-server")  # exec: запасной путь, процесс на каждый вопрос
 SEMAPHORE = threading.Semaphore(int(os.getenv("SHIM_CONCURRENCY", "8")))
 LOCK = threading.Lock()
 STATS = {"calls": 0, "cache_hits": 0, "cost_usd": 0.0, "prompt_tokens": 0, "completion_tokens": 0, "seconds": 0.0}
@@ -185,21 +187,161 @@ def ask_claude(model: str, system: str, user: str, schema: dict | None) -> dict:
     return _retry(run)
 
 
-def ask_codex(model: str, system: str, user: str, schema: dict | None) -> dict:
-    """Один вызов `codex exec`. Ответ приводится к тому же виду, что отдаёт `claude -p`."""
-    if schema is not None:
-        # строгие схемы OpenAI не допускают объект с произвольными полями: аргументы идут JSON-строкой
-        item = schema["properties"]["tool_calls"]["items"]
-        schema = {
-            "type": "object", "additionalProperties": False, "required": ["tool_calls"],
-            "properties": {"tool_calls": {"type": "array", "items": {
-                "type": "object", "additionalProperties": False, "required": ["name", "arguments"],
-                "properties": {
-                    "name": item["properties"]["name"],
-                    "arguments": {"type": "string", "description": "JSON object with the arguments, as a string"},
-                },
-            }}},
+def _codex_schema(schema: dict | None) -> dict | None:
+    """Строгие схемы OpenAI не допускают объект с произвольными полями: аргументы идут JSON-строкой."""
+    if schema is None:
+        return None
+    item = schema["properties"]["tool_calls"]["items"]
+    return {
+        "type": "object", "additionalProperties": False, "required": ["tool_calls"],
+        "properties": {"tool_calls": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["name", "arguments"],
+            "properties": {
+                "name": item["properties"]["name"],
+                "arguments": {"type": "string", "description": "JSON object with the arguments, as a string"},
+            },
+        }}},
+    }
+
+
+def _codex_answer(text: str, usage: dict, structured: bool) -> dict:
+    """Ответ Codex в том же виде, что отдаёт `claude -p`. Имена полей счётчика у exec и app-server разные."""
+    cached = int(usage.get("cached_input_tokens", usage.get("cachedInputTokens", 0)))
+    data = {
+        "result": text,
+        "total_cost_usd": 0.0,  # Codex цену не сообщает
+        "usage": {
+            "input_tokens": int(usage.get("input_tokens", usage.get("inputTokens", 0))) - cached,
+            "cache_read_input_tokens": cached,
+            "output_tokens": int(usage.get("output_tokens", usage.get("outputTokens", 0))),
+        },
+    }
+    if structured:
+        try:
+            data["structured_output"] = {"tool_calls": [
+                {"name": c["name"], "arguments": json.loads(c["arguments"] or "{}")}
+                for c in json.loads(text)["tool_calls"]
+            ]}
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"ответ Codex не по схеме: {exc}: {text[:200]}") from None
+    return data
+
+
+class CodexAppServer:
+    """Встраиваемый режим Codex: один постоянный процесс `codex app-server`, запросы по JSON-RPC через stdio.
+
+    Каждый вопрос идёт отдельным временным тредом со своим системным промптом, поэтому вопросы независимы
+    и могут выполняться одновременно.
+    """
+
+    def __init__(self) -> None:
+        self.proc: subprocess.Popen | None = None
+        self.lock = threading.Lock()
+        self.starting = threading.Lock()
+        self.next_id = 0
+        self.waiting: dict[object, queue.Queue] = {}  # номер запроса или id треда -> очередь сообщений
+
+    def _start(self) -> None:
+        env = {**os.environ, "CODEX_HOME": CODEX_HOME} if CODEX_HOME else None
+        self.proc = subprocess.Popen(
+            ["codex", "app-server", *CODEX_QUIET], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, cwd=EMPTY_CWD, env=env,
+        )
+        threading.Thread(target=self._read, args=(self.proc,), daemon=True).start()
+        self._request("initialize", {"clientInfo": {"name": "polity-shim", "title": "polity", "version": "1"}})
+        self._send({"method": "initialized"})
+
+    def _read(self, proc: subprocess.Popen) -> None:
+        for line in proc.stdout:
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "method" in msg and "id" in msg:  # сервер просит одобрения или вызова инструмента: отказываем
+                self._send({"id": msg["id"], "error": {"code": -32601, "message": "not supported by this client"}})
+            key = msg["id"] if "method" not in msg else (msg.get("params") or {}).get("threadId")
+            if (box := self.waiting.get(key)) is not None:
+                box.put(msg)
+        for box in list(self.waiting.values()):  # процесс завершился: будим всех ожидающих
+            box.put({"method": "error", "params": {"error": {"message": "codex app-server завершился"}}})
+
+    def _send(self, msg: dict) -> None:
+        with self.lock:
+            self.proc.stdin.write(json.dumps(msg) + "\n")
+            self.proc.stdin.flush()
+
+    def _request(self, method: str, params: dict) -> dict:
+        with self.lock:
+            self.next_id += 1
+            request_id = self.next_id
+        box = self.waiting[request_id] = queue.Queue()
+        try:
+            self._send({"id": request_id, "method": method, "params": params})
+            msg = box.get(timeout=TIMEOUT)
+        except queue.Empty:
+            raise subprocess.TimeoutExpired(method, TIMEOUT) from None
+        finally:
+            del self.waiting[request_id]
+        if "error" in msg:
+            raise RuntimeError(json.dumps(msg["error"], ensure_ascii=False))
+        return msg.get("result") or {}
+
+    def ask(self, model: str, system: str, user: str, schema: dict | None) -> dict:
+        with self.starting:  # первый вопрос поднимает процесс, остальные ждут
+            if self.proc is None or self.proc.poll() is not None:
+                self._start()
+        thread = {
+            "baseInstructions": (system or "You are a helpful assistant.") + CODEX_NOTE, "cwd": str(EMPTY_CWD),
+            "ephemeral": True, "sandbox": "read-only", "approvalPolicy": "never",
         }
+        if "/" in model:
+            thread["model"] = model.split("/", 1)[1]
+        thread_id = self._request("thread/start", thread)["thread"]["id"]
+        box = self.waiting[thread_id] = queue.Queue()
+        try:
+            turn = {"threadId": thread_id, "input": [{"type": "text", "text": user}], "effort": EFFORT}
+            if schema is not None:
+                turn["outputSchema"] = schema
+            self._request("turn/start", turn)
+            text, usage, deadline = None, {}, time.time() + TIMEOUT
+            while True:
+                try:
+                    msg = box.get(timeout=max(0.1, deadline - time.time()))
+                except queue.Empty:
+                    raise subprocess.TimeoutExpired("turn", TIMEOUT) from None
+                method, params = msg.get("method"), msg.get("params") or {}
+                if method == "item/completed" and params["item"].get("type") == "agentMessage":
+                    text = params["item"].get("text")
+                elif method == "thread/tokenUsage/updated":
+                    usage = (params.get("tokenUsage") or {}).get("last") or {}
+                elif method == "error":
+                    raise RuntimeError(json.dumps(params.get("error"), ensure_ascii=False))
+                elif method == "turn/completed":
+                    break
+            if text is None:
+                raise RuntimeError("Codex закончил ход без ответа")
+            return _codex_answer(text, usage, schema is not None)
+        finally:
+            del self.waiting[thread_id]
+            try:
+                self._send({"id": 0, "method": "thread/unsubscribe", "params": {"threadId": thread_id}})
+            except OSError:
+                pass
+
+
+CODEX_APP_SERVER = CodexAppServer()
+
+
+def ask_codex(model: str, system: str, user: str, schema: dict | None) -> dict:
+    """Вопрос к Codex: через встраиваемый app-server, либо через `codex exec` при SHIM_CODEX_MODE=exec."""
+    schema = _codex_schema(schema)
+    if CODEX_MODE == "exec":
+        return ask_codex_exec(model, system, user, schema)
+    return _retry(lambda: CODEX_APP_SERVER.ask(model, system, user, schema))
+
+
+def ask_codex_exec(model: str, system: str, user: str, schema: dict | None) -> dict:
+    """Запасной путь: отдельный процесс `codex exec` на каждый вопрос."""
     with tempfile.TemporaryDirectory(prefix="polity-codex-") as tmp:
         instructions = Path(tmp) / "instructions.md"
         instructions.write_text((system or "You are a helpful assistant.") + CODEX_NOTE, encoding="utf-8")
@@ -233,24 +375,7 @@ def ask_codex(model: str, system: str, user: str, schema: dict | None) -> dict:
                     usage = event.get("usage") or {}
             if text is None:
                 raise RuntimeError((done.stderr or done.stdout).decode(errors="replace")[-300:])
-            data = {
-                "result": text,
-                "total_cost_usd": 0.0,  # Codex цену не сообщает
-                "usage": {
-                    "input_tokens": int(usage.get("input_tokens", 0)) - int(usage.get("cached_input_tokens", 0)),
-                    "cache_read_input_tokens": int(usage.get("cached_input_tokens", 0)),
-                    "output_tokens": int(usage.get("output_tokens", 0)),
-                },
-            }
-            if schema is not None:
-                try:
-                    calls = json.loads(text)["tool_calls"]
-                    data["structured_output"] = {"tool_calls": [
-                        {"name": c["name"], "arguments": json.loads(c["arguments"] or "{}")} for c in calls
-                    ]}
-                except (KeyError, TypeError, json.JSONDecodeError) as exc:
-                    raise RuntimeError(f"ответ Codex не по схеме: {exc}: {text[:200]}") from None
-            return data
+            return _codex_answer(text, usage, schema is not None)
 
         return _retry(run)
 
