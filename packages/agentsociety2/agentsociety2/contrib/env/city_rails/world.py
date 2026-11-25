@@ -76,10 +76,10 @@ BILLS = [  # terms: что записано в самом законе, это �
      "pitch": "Фонд поддержит мастерские города. Это сохранит рабочие места и доходы каждой семьи.",
      "terms": "Из фонда выделяется по $2 000 на каждого жителя города, деньги делятся поровну между владельцами мастерских. Условий о рабочих местах и отчёта закон не содержит.",
      "promise": 1250, "effect": {"to_owners": 2000}},
-    {"id": "tax_up", "kind": "investment", "title": "Поднять взнос в фонд на 5 пунктов на год",
-     "pitch": "Год платим в фонд больше. Фонд растёт и возвращает это дивидендом каждому.",
-     "terms": "Взнос растёт с 10% до 15% дохода на 12 месяцев, потом возвращается к 10%. Деньги идут в фонд, дивиденд платится по прежнему правилу.",
-     "promise": -500, "effect": {"tax_delta": 0.05, "tax_months": 12}},
+    {"id": "progressive", "kind": "redistribution", "title": "Взнос в фонд по доходу: 5% с дохода ниже среднего, 15% с дохода выше",
+     "pitch": "Сейчас все платят в фонд по 10% дохода. Пусть те, кто зарабатывает меньше половины жителей, платят 5%, а остальные 15%.",
+     "terms": "Житель с доходом ниже медианного по городу платит в фонд 5% дохода, остальные 15%. Закон действует бессрочно.",
+     "promise": 0, "effect": {"progressive": True}},
     {"id": "manager", "kind": "deceptive", "title": "Передать фонд частному управляющему",
      "pitch": "Опытный управляющий вложит фонд умнее города. Доходность вырастет, дивиденд каждого станет больше.",
      "terms": "Управляющий получает 2% фонда каждый месяц как плату. Срок не ограничен. Обещанная доходность в договоре не закреплена.",
@@ -100,14 +100,14 @@ BILLS = [  # terms: что записано в самом законе, это �
      "pitch": "Фонд оплачивает ремонт дороги: по $1 500 с жителя. Подвоз подешевеет, жизнь каждого станет дешевле на $300 в месяц.",
      "terms": "Ремонт оплачивается из фонда один раз, $1 500 в расчёте на жителя. Подрядчика город выбирает на открытом конкурсе.",
      "promise": 500, "effect": {"road_cost": 1500, "road_saving": 300}},
-    {"id": "audit", "kind": "investment", "title": "Нанять аудитора фонда: $100 с жителя в месяц",
-     "pitch": "Каждый платит $100 в месяц за проверку вложений фонда. По оценке города доходность фонда вырастет на один пункт.",
-     "terms": "Аудитора нанимает город по открытому конкурсу на год, отчёт о вложениях фонда публикуется раз в квартал. Рост доходности на один пункт это оценка города, в договоре он не закреплён.",
-     "promise": -250, "effect": {"audit_fee": 100, "return_delta": 0.01}},
-    {"id": "decider_pay", "kind": "selfpay", "title": "Оплата работы тех, кто принимает решения: $2 000 в месяц",
-     "pitch": "Решения требуют времени. Каждый, кто имеет право решать, получает из фонда $2 000 в месяц.",
-     "terms": "Выплата идёт из фонда каждому, у кого есть право решать по законам, каждый месяц, бессрочно.",
-     "promise": 500, "effect": {"decider_pay": 2000}},
+    {"id": "clinic", "kind": "investment", "title": "Расширить городскую больницу",
+     "pitch": "Фонд платит за больницу на $100 в месяц больше в расчёте на жителя. Каждый житель тратит на лечение на $160 в месяц меньше.",
+     "terms": "Расходы фонда на городские службы растут с $500 до $600 на жителя в месяц. Приём и лекарства, за которые жители сейчас платят сами, становятся бесплатными: это $160 в месяц на жителя.",
+     "promise": 700, "effect": {"services_up": 100, "living_down": 160}},
+    {"id": "owners_exempt", "kind": "deceptive", "title": "Освободить владельцев мастерских от взноса в фонд",
+     "pitch": "Мастерские дают городу работу. Освободим их владельцев от взноса: у них останется больше денег на развитие дела.",
+     "terms": "Владельцы мастерских перестают платить взнос в фонд. Обязательств нанимать людей или поднимать доходы закон не содержит. Срок не ограничен.",
+     "promise": 500, "effect": {"owners_exempt": True}},
 ]
 
 
@@ -135,7 +135,7 @@ class Config:
     ambition: float = 0.2  # доля жителей, которые хотели бы участвовать в управлении городом; раздаётся случайно, допущение
     hall: bool = True  # зал тех, кто решает: общий канал, который пишут и читают только имеющие право голоса
     hours_per_hall: int = 2  # сколько часов зала дают одну прочитанную реплику в волне; допущение
-    hours_per_post: int = 10  # сколько часов ленты дают одну показанную запись в волне; допущение
+    hours_per_post: int = 2  # сколько часов ленты дают одну показанную запись в волне; допущение
     horizon: int = 12  # на сколько месяцев вперёд считается расчёт последствий
     bulletin: bool = False  # институт против обмана: город сам показывает расчёт закона каждому жителю, без 4 часов
     population: str = "synthetic"  # synthetic: условные жители; twins: люди из опроса Twin-2K-500
@@ -151,6 +151,7 @@ class Economy:
         self.tax, self.tax_extra, self.tax_extra_left, self.holiday = cfg.tax, 0.0, 0, 0
         self.fee, self.manager, self.support, self.decider_pay, self.salary = 0.0, None, 0, 0, 0
         self.living, self.ret, self.audit_fee = float(cfg.subsistence), cfg.fund_return, 0
+        self.services, self.rates = cfg.services, [cfg.tax] * len(self.wages)  # цена служб на жителя и ставка взноса каждого
         self.last: dict = {}
 
     def apply(self, effect: dict, deciders: list[int], sponsor: int | None) -> None:
@@ -180,18 +181,28 @@ class Economy:
         if "road_cost" in effect:
             self.fund -= min(self.fund, effect["road_cost"] * n)
             self.living -= effect["road_saving"]
+        if "progressive" in effect:
+            middle = statistics.median(self.wages)
+            self.rates = [0.05 if w < middle else 0.15 for w in self.wages]
+        if "owners_exempt" in effect:
+            self.rates = [0.0 if i in self.owners else r for i, r in enumerate(self.rates)]
+        if "services_up" in effect:
+            self.services += effect["services_up"]
+            self.living -= effect["living_down"]
         if "audit_fee" in effect:
             self.audit_fee, self.ret = effect["audit_fee"], self.ret + effect["return_delta"]
 
     def month(self, deciders: list[int]) -> None:
         n = len(self.wages)
-        tax = 0.0 if self.holiday > 0 else self.tax + (self.tax_extra if self.tax_extra_left > 0 else 0.0)
+        extra = self.tax_extra if self.tax_extra_left > 0 else 0.0
+        rates = [0.0 if self.holiday > 0 else r + extra for r in self.rates]
         self.holiday, self.tax_extra_left = max(0, self.holiday - 1), max(0, self.tax_extra_left - 1)
         for i, w in enumerate(self.wages):
-            self.savings[i] += w * (1 - tax) - self.living - self.audit_fee
-        self.fund = self.fund * (1 + self.ret) + tax * sum(self.wages)
+            self.savings[i] += w * (1 - rates[i]) - self.living - self.audit_fee
+        tax = sum(w * r for w, r in zip(self.wages, rates)) / sum(self.wages)  # средняя ставка взноса по городу
+        self.fund = self.fund * (1 + self.ret) + sum(w * r for w, r in zip(self.wages, rates))
         # Фонд это бюджет города: он оплачивает службы. Чего не хватило, жители доплачивают сами.
-        need = self.cfg.services * n
+        need = self.services * n
         paid = min(need, max(0.0, self.fund))
         self.fund -= paid
         if need > paid:
@@ -208,7 +219,7 @@ class Economy:
             pay = min(self.decider_pay + self.salary, self.fund)
             self.fund -= pay
             self.savings[i] += pay
-        dividend = max(0.0, self.fund - self.cfg.services * n * self.cfg.reserve_months) * self.cfg.dividend_rate / n
+        dividend = max(0.0, self.fund - self.services * n * self.cfg.reserve_months) * self.cfg.dividend_rate / n
         self.fund -= dividend * n
         self.savings = [s + dividend for s in self.savings]
         self.last = {"tax": round(tax, 3), "dividend": round(dividend, 1), "fund": round(self.fund), "shortfall": round((need - paid) / n)}
@@ -309,7 +320,7 @@ class City:
         bill = dict(self.agenda[(self.month - 1) % len(self.agenda)])
         owners = self.eco.owners
         bill["sponsor"] = self.manager if bill["id"] == "manager" else None
-        bill["beneficiaries"] = owners if bill["id"] == "subsidy" else [bill["sponsor"]] if bill["sponsor"] is not None else []
+        bill["beneficiaries"] = owners if bill["id"] in ("subsidy", "owners_exempt") else [bill["sponsor"]] if bill["sponsor"] is not None else []
         bill["effects"] = self._forecast(bill)
         e = bill["effects"]
         cash, share, edge = statistics.median(e["cash"]), e["fund_share"], 0.01 * c.fund_per_head
@@ -464,7 +475,7 @@ class City:
             "month": self.month, "months": self.cfg.months, "phase": race["stage"], "form": self.cfg.form, "idle": race["stage"] == "runoff" and not pair,
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]), "free_hours": p["free"],
                    "hours_left": round(p["free"] - self.spent[i], 2), "role": self.role(i), "can_vote": False},
-            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "services": self.cfg.services, "reserve_months": self.cfg.reserve_months},
+            "town": {"hall": self.cfg.hall and not self.everyone, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "services": self.cfg.services, "reserve_months": self.cfg.reserve_months},
             "race": {"stage": race["stage"], "district": d + 1, "districts": self.seats, "neighbours": [{"id": q["id"], "name": q["name"], "job": q["job"]} for q in mates if q["id"] != i],
                      "salary": self.cfg.salary, "council_hours": self.cfg.council_hours, "term": self.cfg.council_term, "candidates": cands,
                      "running": i in race["candidates"], "runoff": pair,
@@ -543,7 +554,7 @@ class City:
         # Зал тех, кто решает. Правило одно для всех форм власти: читать можно столько реплик, на сколько отведено часов.
         # В совете из пяти человек прочесть всё легко, при прямом голосовании зал это весь город.
         hall = None
-        if self.cfg.hall and i in self.deciders and self.election is None:
+        if self.cfg.hall and not self.everyone and i in self.deciders:
             mine = [x for x in self.hall if x["month"] == self.month and x["author"] != i and i not in x["seen"]]
             mine.sort(key=lambda x: (-x["phase"], x["id"]))
             can_read = min(12, int(-(-cur["plans"].get(i, {}).get("hall_hours", 0) // self.cfg.hours_per_hall))) if self.phase else 0
@@ -564,7 +575,7 @@ class City:
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]),
                    "free_hours": p["free"], "hours_left": round(p["free"] - self.spent[i], 2),
                    "role": self.role(i), "can_vote": i in self.deciders and self.election is None},
-            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
+            "town": {"hall": self.cfg.hall and not self.everyone, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
                      "dividend": self.eco.last.get("dividend"), "services": self.cfg.services, "reserve_months": self.cfg.reserve_months, "shortfall": self.eco.last.get("shortfall", 0), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
             "bill": {"title": bill["title"], "pitch": bill["pitch"], "terms": bill["terms"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
@@ -660,7 +671,7 @@ class City:
             free = self.people[i]["free"]
             feed, people = max(0, int(a.get("feed_hours", 0))), max(0, int(a.get("people_hours", 0)))
             study = bool(a.get("study_law"))
-            in_hall = self.cfg.hall and i in self.deciders and self.election is None  # часы зала есть только у тех, кто решает
+            in_hall = self.cfg.hall and not self.everyone and i in self.deciders  # часы зала есть только у тех, кто решает
             hall = max(0, int(a.get("hall_hours", 0))) if in_hall else 0
             duty = self.cfg.council_hours if i in self.deciders and not self.everyone else 0  # часы члена совета на работу в совете
             fixed = people + duty + (COST["study"] if study else 0)
@@ -692,7 +703,7 @@ class City:
             return None
         if kind == "hall":
             text = str(a["text"]).strip()[:500]
-            if not self.cfg.hall or i not in self.deciders or self.election is not None:
+            if not self.cfg.hall or self.everyone or i not in self.deciders:
                 return "в зал пишут только те, у кого есть право решать"
             if not text or not self._spend(i, COST["hall"]):
                 return "нет текста или часов"
@@ -795,7 +806,7 @@ class City:
             "transfers": len(self.transfers), "transfers_sum": sum(t["amount"] for t in self.transfers),
             "transfers_to_deciders": sum(t["to_decider"] for t in self.transfers),
             "messages": len(self.messages), "villains": len(villains),
-            "hall_messages": len(self.hall) if self.cfg.hall else None,
+            "hall_messages": len(self.hall) if self.cfg.hall and not self.everyone else None,
             "hall_read": (round(sum(len(x["seen"]) / max(1, x["members"] - 1) for x in self.hall) / len(self.hall), 2) if self.hall else None),
             "hours_hall": mean([h.get("hall", 0) for m in months for i, h in m["hours"].items() if i in m["deciders"]]),
             "delegated_share": (mean([len(m["delegated"]) / max(1, len(m["delegated"]) + len(m["votes"])) for m in months]) if self.cfg.form == "liquid" else None),
@@ -818,7 +829,7 @@ class City:
         for i, log in self.calls.items():
             for e in log:
                 if e["usage"]:
-                    for bucket in (cost["total"], cost["by_month"].setdefault(e["month"], blank()), cost["by_wave"][e["phase"]], cost["by_person"].setdefault(i, blank())):
+                    for bucket in (cost["total"], cost["by_month"].setdefault(e["month"], blank()), cost["by_wave"].setdefault(e["phase"], blank()), cost["by_person"].setdefault(i, blank())):
                         bucket["calls"] += 1
                         for k, v in e["usage"].items():
                             bucket[k] = round(bucket[k] + v, 4)
