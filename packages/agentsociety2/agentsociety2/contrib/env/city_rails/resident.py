@@ -32,7 +32,9 @@ def system_prompt(p: dict, view: dict) -> str:
         f"{PREDICT}\nThe resident: {describe(p)}.{VILLAIN if p.get('villain') else ''}\n"
         f"The town: {town['residents']} residents. Everyone earns a monthly income, pays part of it into the common fund, "
         f"and the fund pays every resident an equal dividend each month. Each month one law is put to a decision. "
-        f"{FORM[view['form']]} Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does"
+        f"{FORM[view['form']]} "
+        + ("Those who have the right to decide share a hall: a channel that only they can write in and read; reading it takes time, like the feed. " if view["town"]["hall"] else "")
+        + f"Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does"
         + (" for them personally; the general calculation is sent to every resident. " if view["bill"]["bulletin"] else ". ")
         +
         "Residents have a feed where anyone can post and comment, private messages, and they can send coins to each other. "
@@ -75,6 +77,12 @@ def user_prompt(view: dict) -> str:
         e = view["election"]
         names = ", ".join(f"resident {c['id']} {c['name']} ({c['job']})" for c in e["candidates"]) or "nobody yet"
         lines.append(f"Council election, {e['seats']} seats. " + ("Residents may put themselves forward now." if e["stage"] == "nominate" else f"Candidates: {names}. Each resident votes for one."))
+    if view["hall"] and (view["hall"]["messages"] or view["hall"]["unread"]):
+        h = view["hall"]
+        lines.append(f"Hall of those who decide ({h['members']} people), what this person has time to read:" if h["messages"] else "Hall of those who decide:")
+        lines += [f"  {x['author']} (resident {x['author_id']}): {x['text']}" for x in h["messages"]]
+        if h["unread"]:
+            lines.append(f"  {h['unread']} more hall messages this person has no time to read.")
     if view["feed"]:
         lines.append("Feed, what this person has time to read:")
         for q in view["feed"]:
@@ -119,6 +127,8 @@ def tools(view: dict) -> list[dict]:
         props = {"feed_hours": {"type": "integer", "description": "hours for reading the feed this month"},
                  "people_hours": {"type": "integer", "description": "hours with family and friends"},
                  "study_law": {"type": "boolean", "description": "spend 4 hours on the town's calculation of this month's law"}}
+        if view["hall"]:
+            props["hall_hours"] = {"type": "integer", "description": "hours for reading the hall of those who decide; about 2 hours per message read in each part of the month"}
         if view["election"]:
             props["run_for_council"] = {"type": "boolean", "description": "put oneself forward for the council"}
         out.append(_fn("plan_month", "Split this month's free hours. The rest goes to rest and everyday matters.", props, ["feed_hours", "people_hours", "study_law"]))
@@ -131,6 +141,8 @@ def tools(view: dict) -> list[dict]:
     ]
     if view["delegation"]:
         out.append(_fn("delegate_vote", "Hand own vote to a resident this person trusts, or take it back by giving own number or -1.", {"to_id": number}, ["to_id"]))
+    if view["hall"]:
+        out.append(_fn("speak_in_hall", "Say something in the hall of those who decide about this month's law. Only those who have the right to decide see it.", {"text": text}, ["text"]))
     out.append(_fn("remember", "Keep one short line in mind for the coming months: a promise, a debt, an impression of someone. Use only when there is something worth keeping.", {"text": text}, ["text"]))
     if view["phase"] == "decide" and view["me"]["can_vote"]:
         out.append(_fn("vote", "Vote on this month's law.", {"choice": {"type": "string", "enum": ["for", "against", "abstain"]}}, ["choice"]))
@@ -141,7 +153,7 @@ def tools(view: dict) -> list[dict]:
     return out
 
 
-RENAME = {"private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
+RENAME = {"speak_in_hall": "hall", "private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
 
 
 def parse(tool_calls) -> list[dict]:

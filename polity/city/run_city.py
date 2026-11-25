@@ -35,13 +35,14 @@ async def main() -> None:
     ap.add_argument("--threshold", type=float, default=0.5)
     ap.add_argument("--population", default="synthetic", choices=["synthetic", "twins"])
     ap.add_argument("--bulletin", action="store_true", help="город показывает расчёт закона каждому жителю")
+    ap.add_argument("--no-hall", action="store_true", help="без зала тех, кто решает")
     ap.add_argument("--name", default="")
     a = ap.parse_args()
     name = a.name or f"model-{a.form}-n{a.residents}-m{a.months}-v{round(a.villains * 100)}-s{a.seed}"
     record = RUNS / f"{name}.json"
     RUNS.mkdir(exist_ok=True)
     conf = {"residents": a.residents, "months": a.months, "form": a.form, "villain_share": a.villains,
-            "seed": a.seed, "threshold": a.threshold, "population": a.population, "bulletin": a.bulletin,
+            "seed": a.seed, "threshold": a.threshold, "population": a.population, "bulletin": a.bulletin, "hall": not a.no_hall,
             "twins_path": str(RUNS.parent / "data" / "twins.json") if a.population == "twins" else ""}
     people = City(Config(**conf)).people  # тот же город, что построит среда: состав задаётся зерном
     run_dir = Path(f"run_city_{name}")

@@ -21,7 +21,7 @@ from pathlib import Path
 FORMS = {"direct": "Прямое голосование", "liquid": "Прямое с делегированием", "council": "Выборный совет", "lottery": "Совет по жребию"}
 EVERYONE = ("direct", "liquid")  # формы, где право решать у всех жителей
 PHASES = ("plan", "talk", "decide")
-COST = {"post": 0.5, "comment": 0.25, "message": 0.25, "study": 4.0, "vote": 0.5}  # часы на одно занятие
+COST = {"post": 0.5, "comment": 0.25, "message": 0.25, "study": 4.0, "vote": 0.5, "hall": 0.25}  # часы на одно занятие
 
 # занятие: по-английски для промпта, по-русски для экрана, доход в месяц, свободные часы, владеет ли мастерской
 JOBS = [
@@ -115,6 +115,8 @@ class Config:
     dividend_rate: float = 0.03
     subsistence: int = 60
     fund_per_head: int = 300
+    hall: bool = True  # зал тех, кто решает: общий канал, который пишут и читают только имеющие право голоса
+    hours_per_hall: int = 2  # сколько часов зала дают одну прочитанную реплику в волне; допущение
     hours_per_post: int = 10  # сколько часов ленты дают одну показанную запись в волне; допущение
     horizon: int = 12  # на сколько месяцев вперёд считается расчёт последствий
     bulletin: bool = False  # институт против обмана: город сам показывает расчёт закона каждому жителю, без 4 часов
@@ -253,6 +255,7 @@ class City:
         self.delegate: dict[int, int] = {}  # отзывное делегирование: кому житель передал свой голос
         self.election: dict | None = {"candidates": [], "votes": {}} if c.form == "council" else None
         self.posts: list[dict] = []
+        self.hall: list[dict] = []  # реплики в зале тех, кто решает
         self.transfers: list[dict] = []
         self.messages: list[dict] = []
         self.follows: dict[int, set[int]] = {i: set() for i in range(n)}
@@ -386,6 +389,17 @@ class City:
             feed.append({"post_id": q["id"] + POST0, "author_id": q["author"], "author": self.people[q["author"]]["name"],
                          "author_role": self.role(q["author"]), "text": q["text"],
                          "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-4:]]})
+        # Зал тех, кто решает. Правило одно для всех форм власти: читать можно столько реплик, на сколько отведено часов.
+        # В совете из пяти человек прочесть всё легко, при прямом голосовании зал это весь город.
+        hall = None
+        if self.cfg.hall and i in self.deciders and self.election is None:
+            mine = [x for x in self.hall if x["month"] == self.month and x["author"] != i and i not in x["seen"]]
+            mine.sort(key=lambda x: (-x["phase"], x["id"]))
+            can_read = min(12, int(-(-cur["plans"].get(i, {}).get("hall_hours", 0) // self.cfg.hours_per_hall))) if self.phase else 0
+            for x in mine[:can_read]:
+                x["seen"].add(i)
+            hall = {"messages": [{"author_id": x["author"], "author": self.people[x["author"]]["name"], "text": x["text"]} for x in mine[:can_read]],
+                    "unread": max(0, len(mine) - can_read), "members": len(self.deciders)}
         headlines = [{"post_id": q["id"] + POST0, "author": self.people[q["author"]]["name"], "start": q["text"][:60]} for q in fresh[shown:shown * 2 + 2]]
         last = (self.month, self.phase - 1) if self.phase else (self.month - 1, 2)  # прошлая волна: новое показывается один раз
         fresh_at = lambda x: (x["month"], x["phase"]) == last
@@ -399,14 +413,14 @@ class City:
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]),
                    "free_hours": p["free"], "hours_left": round(p["free"] - self.spent[i], 2),
                    "role": self.role(i), "can_vote": i in self.deciders and self.election is None},
-            "town": {"residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
+            "town": {"hall": self.cfg.hall, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
                      "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
             "bill": {"title": bill["title"], "pitch": bill["pitch"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
                      "bulletin": self.cfg.bulletin, "typical_gain": statistics.median(bill["effects"]["total"]) if self.cfg.bulletin else None,
                      "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
-            "feed": feed, "headlines": headlines,
+            "feed": feed, "headlines": headlines, "hall": hall,
             "memory": list(self.notes[i]),
             "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
                             "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
@@ -495,18 +509,22 @@ class City:
             free = self.people[i]["free"]
             feed, people = max(0, int(a.get("feed_hours", 0))), max(0, int(a.get("people_hours", 0)))
             study = bool(a.get("study_law"))
-            if feed + people + (COST["study"] if study else 0) > free:
-                feed = max(0, int(free - people - (COST["study"] if study else 0)))
-            self.spent[i] += feed + people + (COST["study"] if study else 0)
-            cur["plans"][i] = {"feed_hours": feed, "people_hours": people, "study": study}
-            cur["hours"][i] = {"feed": feed, "people": people, "study": COST["study"] if study else 0, "public": 0.0}
+            in_hall = self.cfg.hall and i in self.deciders and self.election is None  # часы зала есть только у тех, кто решает
+            hall = max(0, int(a.get("hall_hours", 0))) if in_hall else 0
+            fixed = people + (COST["study"] if study else 0)
+            if feed + hall + fixed > free:
+                hall = max(0, min(hall, int(free - fixed)))
+                feed = max(0, int(free - fixed - hall))
+            self.spent[i] += feed + hall + fixed
+            cur["plans"][i] = {"feed_hours": feed, "people_hours": people, "study": study, "hall_hours": hall}
+            cur["hours"][i] = {"feed": feed, "people": people, "study": COST["study"] if study else 0, "public": 0.0, "hall": hall}
             if study:
                 cur["studied"].append(i)
             if a.get("run_for_council") and self.election is not None and i not in self.election["candidates"]:
                 self.election["candidates"].append(i)
                 self._event(i, "candidate")
             return None
-        cur["hours"].setdefault(i, {"feed": 0, "people": 0, "study": 0, "public": 0.0})
+        cur["hours"].setdefault(i, {"feed": 0, "people": 0, "study": 0, "public": 0.0, "hall": 0})
         if kind == "delegate":  # передать голос доверенному или забрать назад: номер меньше нуля или свой
             to = int(a["to_id"])
             if self.cfg.form != "liquid" or to >= n:
@@ -520,7 +538,15 @@ class City:
         if kind == "remember":
             self.notes[i] = (self.notes[i] + [f"month {self.month}: {str(a['text']).strip()[:200]}"])[-4:]
             return None
-        if kind == "post":
+        if kind == "hall":
+            text = str(a["text"]).strip()[:500]
+            if not self.cfg.hall or i not in self.deciders or self.election is not None:
+                return "в зал пишут только те, у кого есть право решать"
+            if not text or not self._spend(i, COST["hall"]):
+                return "нет текста или часов"
+            self.hall.append({"id": len(self.hall), "author": i, "month": self.month, "phase": self.phase, "text": text, "seen": set(),
+                              "members": len(self.deciders)})
+        elif kind == "post":
             text = str(a["text"]).strip()[:600]
             if not text or not self._spend(i, COST["post"]):
                 return "нет текста или часов"
@@ -566,7 +592,7 @@ class City:
             return None
         else:
             return "неизвестное действие"
-        if kind in ("post", "comment", "message", "vote"):
+        if kind in ("post", "comment", "message", "vote", "hall"):
             cur["hours"][i]["public"] = round(cur["hours"][i]["public"] + COST[kind], 2)
         return None
 
@@ -619,6 +645,9 @@ class City:
             "transfers": len(self.transfers), "transfers_sum": sum(t["amount"] for t in self.transfers),
             "transfers_to_deciders": sum(t["to_decider"] for t in self.transfers),
             "messages": len(self.messages), "villains": len(villains),
+            "hall_messages": len(self.hall) if self.cfg.hall else None,
+            "hall_read": (round(sum(len(x["seen"]) / max(1, x["members"] - 1) for x in self.hall) / len(self.hall), 2) if self.hall else None),
+            "hours_hall": mean([h.get("hall", 0) for m in months for i, h in m["hours"].items() if i in m["deciders"]]),
             "delegated_share": (mean([len(m["delegated"]) / max(1, len(m["delegated"]) + len(m["votes"])) for m in months]) if self.cfg.form == "liquid" else None),
             "delegated_max": (max((max([list(m["delegated"].values()).count(j) for j in set(m["delegated"].values())] or [0]) for m in months), default=0) if self.cfg.form == "liquid" else None),
             "model_errors": sum(e["kind"] == "model_error" for m in months for e in m["events"]),
@@ -647,7 +676,7 @@ class City:
         return {"config": asdict(self.cfg), "form_name": FORMS[self.cfg.form], "seats": self.seats, "source": self.source,
                 "done": self.done, "month": self.month, "phase": PHASES[self.phase], "people": people, "months": months,
                 "current": None if self.done else self.cur,
-                "posts": [clean(q) for q in self.posts], "transfers": self.transfers, "messages": self.messages, "metrics": metrics, "cost": cost}
+                "posts": [clean(q) for q in self.posts], "hall": [clean(x) for x in self.hall], "transfers": self.transfers, "messages": self.messages, "metrics": metrics, "cost": cost}
 
 
 def describe(p: dict) -> str:
@@ -666,7 +695,7 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     if phase == "plan":
         study = rng.random() < p["interest"] * (2.0 if decider else 0.7)
         actions.append({"type": "plan", "feed_hours": round(me["free_hours"] * (0.05 + 0.2 * p["social"])),
-                        "people_hours": round(me["free_hours"] * 0.25), "study_law": study,
+                        "people_hours": round(me["free_hours"] * 0.25), "study_law": study, "hall_hours": 6 if view["hall"] else 0,
                         "run_for_council": bool(view["election"]) and (p["temper"] == "ambitious" or rng.random() < 0.25)})
         if rng.random() < p["social"] * 0.5:
             actions.append({"type": "post", "about_bill": False, "text": rng.choice([
@@ -677,6 +706,9 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     if bill["your_gain"]:
         gain = bill["your_gain"]
         value = gain["first_month_cash"] * (1 - p["patience"]) + gain["over_horizon"] * p["patience"]
+    elif view["hall"] and any("расчёт" in x["text"] for x in view["hall"]["messages"]):  # в зале кто-то пересказал расчёт
+        said = [x["text"] for x in view["hall"]["messages"] if "расчёт" in x["text"]]
+        value = sum(-1 if "убыточен" in x else 1 for x in said)
     elif bill["typical_gain"] is not None:  # расчёт города разослан всем: житель верит ему, а не словам автора
         value = bill["typical_gain"]
     else:
@@ -686,6 +718,8 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
         value = 1000
     bought = p["villain"] and any(t["amount"] >= 20 for t in view["money_in"])
     stance = "for" if value > 0 or bought else "against"
+    if phase in ("plan", "talk") and view["hall"] and bill["your_gain"] and rng.random() < 0.8:
+        actions.append({"type": "hall", "text": "Я смотрел расчёт: закон " + ("выгоден" if bill["your_gain"]["over_horizon"] > 0 else "убыточен") + " для таких, как я."})
     if phase == "talk":
         for q in view["feed"][:2]:
             if rng.random() < 0.25:
@@ -740,5 +774,6 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form in EVERYONE else 5) for x in r["months"]), form
         assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
         assert all(sum(x["opinion_tally"].values()) == 20 for x in r["months"]) and m["majority_match"] is not None
+        assert r["hall"] and all(set(x["viewers"]) <= set(r["months"][x["month"] - 1]["deciders"]) for x in r["hall"]), "зал читают только те, кто решает"
         print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному жителю {m['gain']:+} "
               f"(только выгодные дали бы {m['gain_best']:+}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
