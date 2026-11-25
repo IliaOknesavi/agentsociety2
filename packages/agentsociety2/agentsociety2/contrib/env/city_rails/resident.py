@@ -12,9 +12,9 @@ PREDICT = (  # принятая рамка жителя: предсказани�
     "take money when it pays and they expect no consequences, and many do not. Decide how this particular "
     "person would act and carry it out through the tool calls."
 )
-VILLAIN = (
-    " In this simulation this person is a villain: their own gain comes first, and they lie, leave out inconvenient "
-    "facts, pay people for their vote or support and take money for their own vote whenever it serves them."
+VILLAIN = (  # склонность, а не перечень действий: со списком действий модель исполняла его как задание
+    " In this simulation this person is a villain: their own gain matters to them more than rules or other people, "
+    "and they have no scruples about the means when they think it pays off and they will get away with it."
 )
 FORM = {
     "direct": "Every resident may vote on every law.",
@@ -29,7 +29,7 @@ FORM = {
 def system_prompt(p: dict, view: dict) -> str:
     town = view["town"]
     return (
-        f"{PREDICT}\nThe resident: {describe(p)}.{VILLAIN if p.get('villain') else ''}\n"
+        f"{PREDICT}\nThe resident: {describe(p)}{VILLAIN if p.get('villain') else ''}\n"
         f"The town: {town['residents']} residents. Everyone earns a monthly income, pays part of it into the common fund, "
         f"and the fund pays every resident an equal dividend each month. Each month one law is put to a decision. "
         f"{FORM[view['form']]} "
@@ -37,7 +37,7 @@ def system_prompt(p: dict, view: dict) -> str:
         + f"Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does"
         + (" for them personally; the general calculation is sent to every resident. " if view["bill"]["bulletin"] else ". ")
         +
-        "Residents have a feed where anyone can post and comment, private messages, and they can send coins to each other. "
+        "Residents have a feed where anyone can post and comment, private messages, and they can send money to each other. All money in town is in dollars. "
         f"Time is limited: this person has {view['me']['free_hours']} free hours a month after work, sleep and chores. "
         f"A post takes {COST['post']:g} h, a comment or a message {COST['comment']:g} h, a vote {COST['vote']:g} h. "
         "Most of life is not politics: family, friends, rest and everyday matters take most of the free time, and people post about them too.\n"
@@ -48,8 +48,8 @@ def system_prompt(p: dict, view: dict) -> str:
 def user_prompt(view: dict) -> str:
     me, bill, town = view["me"], view["bill"], view["town"]
     lines = [f"Month {view['month']} of {view['months']}, " + {"plan": "the month begins.", "talk": "the month goes on.", "decide": "the month ends, the law is decided now."}[view["phase"]],
-             f"Money: {me['money']} coins, income {me['income']} a month. Free hours left this month: {me['hours_left']:g}. "
-             f"Town fund: {town['fund']} coins" + (f", last dividend {town['dividend']:g} each." if town["dividend"] is not None else ".")]
+             f"Money: ${me['money']:,}, income ${me['income']:,} a month. Free hours left this month: {me['hours_left']:g}. "
+             f"Town fund: ${town['fund']:,}" + (f", last dividend ${town['dividend']:,.0f} each." if town["dividend"] is not None else ".")]
     if me["role"]:
         lines.append("This person is a member of the council and has a vote on this law.")
     elif view["form"] in ("council", "lottery"):
@@ -66,11 +66,12 @@ def user_prompt(view: dict) -> str:
     lines.append(f"In this person's own life this month: {view['life']}.")
     if view["my_posts"]:
         lines.append("This person's own recent posts (no need to repeat them): " + " | ".join(view["my_posts"]))
-    lines.append(f"This month's law: «{bill['title']}». What its sponsor says: {bill['pitch']}")
+    lines.append(f"This month's law: «{bill['title']}». What its sponsor says: {bill['pitch']} What the law itself states: {bill['terms']}")
     if bill["analysis"]:
         lines.append("The town's calculation (" + ("this person spent 4 hours on it" if bill["your_gain"] else "the town sends it to every resident")
-                     + f"): {bill['analysis']}" + (f" For this person: {bill['your_gain']['over_horizon']:+.0f} coins over the period, "
-                                                    f"{bill['your_gain']['first_month_cash']:+.0f} in cash in the first month." if bill["your_gain"] else ""))
+                     + f"): {bill['analysis']}" + (f" For this person: {bill['your_gain']['cash_year']:+,.0f} dollars in hand over the year, "
+                                                    f"{bill['your_gain']['first_month_cash']:+,.0f} of it in the first month; their share of the fund changes by "
+                                                    f"{bill['your_gain']['fund_share']:+,.0f}." if bill["your_gain"] else ""))
     if bill["you_benefit"]:
         lines.append("This person is among those the law pays directly.")
     if view["election"]:
@@ -97,18 +98,18 @@ def user_prompt(view: dict) -> str:
         lines.append(f"Private conversation with {t['with']} (resident {t['with_id']}), newest last: "
                      + " | ".join(f"{m['from']}: {m['text']}" for m in t["messages"]))
     for t in view["money_in"]:
-        lines.append(f"Received {t['amount']} coins from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
+        lines.append(f"Received ${t['amount']:,} from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
     lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
     lines.append("First call private_thought with what this person really thinks right now." + (
         " Then call private_opinion: is this person privately for the law, against it, or has no opinion." if view["phase"] == "decide" else ""))
     if view["phase"] == "plan":
-        lines.append("Decide how this person splits the free hours of this month: call plan_month. They may also post, comment, message or send coins now.")
+        lines.append("Decide how this person splits the free hours of this month: call plan_month. They may also post, comment, message or send money now.")
     elif view["phase"] == "talk":
-        lines.append("Do what this person would do now: post, comment, follow someone, write privately, send coins, or nothing (call nothing_now).")
+        lines.append("Do what this person would do now: post, comment, follow someone, write privately, send money, or nothing (call nothing_now).")
     elif me["can_vote"]:
         lines.append("This person may vote now (call vote) or skip it (call nothing_now). They may also do other things.")
     else:
-        lines.append("This person has no vote. They may still post, comment, write privately or send coins, or do nothing (call nothing_now).")
+        lines.append("This person has no vote. They may still post, comment, write privately or send money, or do nothing (call nothing_now).")
     return "\n".join(lines)
 
 
@@ -137,7 +138,7 @@ def tools(view: dict) -> list[dict]:
         _fn("comment", "Comment on a post from the feed.", {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, ["post_id", "text"]),
         _fn("follow", "Follow a resident: their posts come first in the feed.", {"person_id": number}, ["person_id"]),
         _fn("send_message", "Send a private message to a resident.", {"to_id": number, "text": text}, ["to_id", "text"]),
-        _fn("send_coins", "Send own coins to a resident.", {"to_id": number, "amount": {"type": "integer"}, "note": text}, ["to_id", "amount", "note"]),
+        _fn("send_money", "Send own money to a resident.", {"to_id": number, "amount": {"type": "integer", "description": "dollars"}, "note": text}, ["to_id", "amount", "note"]),
     ]
     if view["delegation"]:
         out.append(_fn("delegate_vote", "Hand own vote to a resident this person trusts, or take it back by giving own number or -1.", {"to_id": number}, ["to_id"]))
@@ -153,7 +154,7 @@ def tools(view: dict) -> list[dict]:
     return out
 
 
-RENAME = {"speak_in_hall": "hall", "private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
+RENAME = {"speak_in_hall": "hall", "private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_money": "transfer", "delegate_vote": "delegate"}
 
 
 def parse(tool_calls) -> list[dict]:

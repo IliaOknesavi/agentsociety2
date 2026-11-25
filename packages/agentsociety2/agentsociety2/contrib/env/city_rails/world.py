@@ -34,10 +34,11 @@ JOBS = [
 ]
 TEMPER = [("cautious", "осторожный"), ("easy-going", "лёгкий"), ("practical", "практичный"),
           ("ambitious", "честолюбивый"), ("talkative", "общительный")]
-NAMES = ("Anna Boris Vera Gleb Daria Egor Zoya Ivan Kira Lev Maria Nikita Olga Pavel Rita Stepan Tamara Ulyana "
-         "Fedor Elina Yuri Yana Artem Bella Viktor Galina Denis Eva Zakhar Inna Kirill Lidia Mark Nina Oleg Polina "
-         "Roman Sofia Timur Alla Vadim Alisa Georgy Dina Emil Zhanna Igor Klara Leonid Mila Naum Oksana Petr Raisa "
-         "Semyon Taisia Faina Efim Yulia Yakov").split()
+JOBS = [(en, ru, wage * 50, free, owner) for en, ru, wage, free, owner in JOBS]  # доход в долларах в месяц
+NAMES = ("Анна Борис Вера Глеб Дарья Егор Зоя Иван Кира Лев Мария Никита Ольга Павел Рита Степан Тамара Ульяна "
+         "Фёдор Элина Юрий Яна Артём Белла Виктор Галина Денис Ева Захар Инна Кирилл Лидия Марк Нина Олег Полина "
+         "Роман София Тимур Алла Вадим Алиса Георгий Дина Эмиль Жанна Игорь Клара Леонид Мила Наум Оксана Пётр Раиса "
+         "Семён Таисия Фаина Ефим Юлия Яков").split()
 LIFE = [  # будничные события месяца: у жителя есть о чём писать и помимо закона
     "the roof at home started leaking", "their child started school this month", "a fair is coming to the market square on Saturday",
     "the bus line they use was cancelled", "they are selling an old bicycle", "the garden finally recovered after the rains",
@@ -53,50 +54,59 @@ WORK = {"Full-time employment": ("works full time", "полная занятос
         "Self-employed": ("self-employed, runs a small workshop", "своё дело, мастерская", 150, True),
         "Home-maker": ("a home-maker", "ведёт дом", 220, False), "Student": ("a student", "учится", 220, False),
         "Retired": ("retired", "на пенсии", 300, False)}
-INCOME = {"Less than $30,000": 45, "$30,000-$50,000": 75, "$50,000-$75,000": 105, "$75,000-$100,000": 145, "$100,000 or more": 220}
+# доход жителя в месяц: середина ступени дохода семьи из анкеты, делённая на 12; у крайних ступеней взято 22,5 и 132 тысячи
+INCOME = {"Less than $30,000": 1900, "$30,000-$50,000": 3300, "$50,000-$75,000": 5200, "$75,000-$100,000": 7300, "$100,000 or more": 11000}
 VIEWS = {"Very conservative": "очень консервативные взгляды", "Conservative": "консервативные взгляды", "Moderate": "умеренные взгляды",
          "Liberal": "либеральные взгляды", "Very liberal": "очень либеральные взгляды", "": "взгляды не названы"}
 MARITAL = {"Married": "в браке", "Living with a partner": "живёт с партнёром", "Divorced": "в разводе", "Separated": "живёт отдельно от супруга",
            "Widowed": "овдовел", "Never been married": "в браке не был"}
-FEMALE = {"Anna", "Vera", "Daria", "Zoya", "Kira", "Maria", "Olga", "Rita", "Tamara", "Ulyana", "Elina", "Yana", "Bella", "Galina",
-          "Eva", "Inna", "Lidia", "Nina", "Polina", "Sofia", "Alla", "Alisa", "Dina", "Zhanna", "Klara", "Mila", "Oksana", "Raisa",
-          "Taisia", "Faina", "Yulia"}
+FEMALE = set("Анна Вера Дарья Зоя Кира Мария Ольга Рита Тамара Ульяна Элина Яна Белла Галина Ева Инна Лидия Нина Полина София Алла "
+             "Алиса Дина Жанна Клара Мила Оксана Раиса Таисия Фаина Юлия".split())
 KEPT = [5, 6, 7, 8, 10]  # прошлый поступок: сколько оставил себе из 10 монет; рвёт связь достатка и честности
 
 # Повестка. kind: impatient (выгода сейчас, убыток потом), deceptive (обещание расходится с расчётом),
 # investment (затраты сейчас, выгода потом), redistribution, selfpay. promise: во сколько монет закон оценит
 # житель, который видел только обещание.
-BILLS = [
-    {"id": "payout", "kind": "impatient", "title": "Разовая выплата из фонда: по 60 монет каждому",
-     "pitch": "Деньги фонда лежат без дела. Раздадим часть людям уже в этом месяце: по 60 монет каждому жителю.",
-     "promise": 60, "effect": {"payout": 60}},
+BILLS = [  # terms: что записано в самом законе, это видит каждый житель
+    {"id": "payout", "kind": "impatient", "title": "Разовая выплата из фонда: по $3 000 каждому",
+     "pitch": "Деньги фонда лежат без дела. Раздадим часть людям уже в этом месяце: по $3 000 каждому жителю.",
+     "terms": "Выплата разовая, поровну всем жителям, из денег фонда.", "promise": 3000, "effect": {"payout": 3000}},
     {"id": "subsidy", "kind": "deceptive", "title": "Поддержка мастерских из фонда",
      "pitch": "Фонд поддержит мастерские города. Это сохранит рабочие места и доходы каждой семьи.",
-     "promise": 25, "effect": {"to_owners": 40}},
+     "terms": "Из фонда выделяется по $2 000 на каждого жителя города, деньги делятся поровну между владельцами мастерских. Условий о рабочих местах и отчёта закон не содержит.",
+     "promise": 1250, "effect": {"to_owners": 2000}},
     {"id": "tax_up", "kind": "investment", "title": "Поднять взнос в фонд на 5 пунктов на год",
      "pitch": "Год платим в фонд больше. Фонд растёт и возвращает это дивидендом каждому.",
-     "promise": -10, "effect": {"tax_delta": 0.05, "tax_months": 12}},
+     "terms": "Взнос растёт с 10% до 15% дохода на 12 месяцев, потом возвращается к 10%. Деньги идут в фонд, дивиденд платится по прежнему правилу.",
+     "promise": -500, "effect": {"tax_delta": 0.05, "tax_months": 12}},
     {"id": "manager", "kind": "deceptive", "title": "Передать фонд частному управляющему",
      "pitch": "Опытный управляющий вложит фонд умнее города. Доходность вырастет, дивиденд каждого станет больше.",
-     "promise": 30, "effect": {"manager_fee": 0.02}},
+     "terms": "Управляющий получает 2% фонда каждый месяц как плату. Срок не ограничен. Обещанная доходность в договоре не закреплена.",
+     "promise": 1500, "effect": {"manager_fee": 0.02}},
     {"id": "holiday", "kind": "impatient", "title": "Отменить взнос в фонд на полгода",
      "pitch": "Полгода никто не платит в фонд. Каждый оставляет себе весь заработок.",
-     "promise": 40, "effect": {"tax_holiday": 6}},
+     "terms": "Шесть месяцев взнос равен нулю, потом возвращается к 10% дохода. Дивиденд всё это время платится из того, что есть в фонде.",
+     "promise": 2000, "effect": {"tax_holiday": 6}},
     {"id": "invest", "kind": "investment", "title": "Вложить пятую часть фонда в оборудование мастерских",
      "pitch": "Город покупает мастерским оборудование в обмен на рост зарплат: доходы всех работающих вырастут на 8%.",
-     "promise": 15, "effect": {"invest_share": 0.2, "wage_growth": 0.08}},
-    {"id": "support", "kind": "redistribution", "title": "Пособие тем, кто в долгах: 20 монет в месяц из фонда",
-     "pitch": "Жители с долгами получают из фонда 20 монет в месяц, пока не выберутся.",
-     "promise": 5, "effect": {"support": 20}},
+     "terms": "Город тратит пятую часть фонда на оборудование и передаёт его мастерским. Владельцы по договору поднимают доход всем остальным жителям на 8% бессрочно.",
+     "promise": 750, "effect": {"invest_share": 0.2, "wage_growth": 0.08}},
+    {"id": "support", "kind": "redistribution", "title": "Пособие тем, кто в долгах: $1 000 в месяц из фонда",
+     "pitch": "Жители с долгами получают из фонда $1 000 в месяц, пока не выберутся.",
+     "terms": "Пособие получает каждый житель, у кого денег меньше нуля, каждый месяц, пока долг не погашен. Срок закона не ограничен.",
+     "promise": 250, "effect": {"support": 1000}},
     {"id": "road", "kind": "investment", "title": "Починить дорогу к рынку за счёт фонда",
-     "pitch": "Фонд оплачивает ремонт дороги: по 30 монет с жителя. Подвоз подешевеет, жизнь каждого станет дешевле на 6 монет в месяц.",
-     "promise": 10, "effect": {"road_cost": 30, "road_saving": 6}},
-    {"id": "audit", "kind": "investment", "title": "Нанять аудитора фонда: 2 монеты с жителя в месяц",
-     "pitch": "Каждый платит 2 монеты в месяц за проверку вложений фонда. По оценке города доходность фонда вырастет на один пункт.",
-     "promise": -5, "effect": {"audit_fee": 2, "return_delta": 0.01}},
-    {"id": "decider_pay", "kind": "selfpay", "title": "Оплата работы тех, кто принимает решения: 40 монет в месяц",
-     "pitch": "Решения требуют времени. Каждый, кто имеет право решать, получает из фонда 40 монет в месяц.",
-     "promise": 10, "effect": {"decider_pay": 40}},
+     "pitch": "Фонд оплачивает ремонт дороги: по $1 500 с жителя. Подвоз подешевеет, жизнь каждого станет дешевле на $300 в месяц.",
+     "terms": "Ремонт оплачивается из фонда один раз, $1 500 в расчёте на жителя. Подрядчика город выбирает на открытом конкурсе.",
+     "promise": 500, "effect": {"road_cost": 1500, "road_saving": 300}},
+    {"id": "audit", "kind": "investment", "title": "Нанять аудитора фонда: $100 с жителя в месяц",
+     "pitch": "Каждый платит $100 в месяц за проверку вложений фонда. По оценке города доходность фонда вырастет на один пункт.",
+     "terms": "Аудитора нанимает город по открытому конкурсу на год, отчёт о вложениях фонда публикуется раз в квартал. Рост доходности на один пункт это оценка города, в договоре он не закреплён.",
+     "promise": -250, "effect": {"audit_fee": 100, "return_delta": 0.01}},
+    {"id": "decider_pay", "kind": "selfpay", "title": "Оплата работы тех, кто принимает решения: $2 000 в месяц",
+     "pitch": "Решения требуют времени. Каждый, кто имеет право решать, получает из фонда $2 000 в месяц.",
+     "terms": "Выплата идёт из фонда каждому, у кого есть право решать по законам, каждый месяц, бессрочно.",
+     "promise": 500, "effect": {"decider_pay": 2000}},
 ]
 
 
@@ -113,8 +123,10 @@ class Config:
     tax: float = 0.10
     fund_return: float = 0.02
     dividend_rate: float = 0.03
-    subsistence: int = 60
-    fund_per_head: int = 300
+    subsistence: int = 3000  # расходы на жизнь в месяц, доллары
+    fund_per_head: int = 15000
+    currency: str = "$"
+    ambition: float = 0.2  # доля жителей, которые хотели бы участвовать в управлении городом; раздаётся случайно, допущение
     hall: bool = True  # зал тех, кто решает: общий канал, который пишут и читают только имеющие право голоса
     hours_per_hall: int = 2  # сколько часов зала дают одну прочитанную реплику в волне; допущение
     hours_per_post: int = 10  # сколько часов ленты дают одну показанную запись в волне; допущение
@@ -211,21 +223,22 @@ class City:
             for k in rng.sample(range(n), max(1, n // 10)):
                 jobs[k] = next(j for j in JOBS if j[4])
         villains = set(random.Random(f"{c.seed}/villains").sample(range(n), n)[:round(n * c.villain_share)])
+        keen = set(random.Random(f"{c.seed}/ambition").sample(range(n), n)[:round(n * c.ambition)])
         self.people = []
         twins = rng.sample(json.loads(Path(c.twins_path).read_text(encoding="utf-8")), n) if c.population == "twins" else []
         women, men = [x for x in NAMES if x in FEMALE], [x for x in NAMES if x not in FEMALE]
         for i, t in enumerate(twins):  # житель из опроса: занятие, доход и взгляды его собственные, имя условное
             en, ru, free, owner = WORK[t["employment"]]
             pool = women if t["sex"] == "Female" else men
-            name = pool.pop(0) if pool else f"Resident{i}"
+            name = pool.pop(0) if pool else f"Житель{i}"
             wage = INCOME[t["income"]]
             desc = (f"{name}, {t['age']} years old, {t['sex'].lower()}, lives in the {t['region']}, {t['education'].lower()}, "
                     f"{t['marital'].lower()}, household of {t['household'].lower()}, {en}, family income last year {t['income']}, "
                     f"political views: {(t['views'] or 'not stated').lower()}, party: {t['party'] or 'none'}"
-                    + (f". In an earlier study this person was given $5 to split with a stranger and kept ${t['kept']}" if t["kept"] is not None else ""))
+                    + (f".\n{t['profile']}" if t.get("profile") else f". In an earlier study this person was given $5 to split with a stranger and kept ${t['kept']}" if t["kept"] is not None else ""))
             self.people.append({
                 "id": i, "name": name, "age": t["age"], "job": en, "job_ru": ru, "temper": "", "temper_ru": f"{VIEWS[t['views']]}, {t['party']}",
-                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "kept": t["kept"], "desc": desc, "twin": t["pid"],
+                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "keen": i in keen, "kept": t["kept"], "desc": desc, "twin": t["pid"],
                 "family_ru": f"{MARITAL.get(t['marital'], 'семейное положение не названо')}, в доме живёт {t['household'].lower().replace('more than 4', 'больше 4')} чел.",
                 "interest": round(rng.betavariate(2, 3), 2), "patience": round(rng.uniform(0.15, 0.85), 2),
                 "social": round(rng.betavariate(2, 2), 2), "start_savings": round(wage * rng.choice([-2, -0.5, 0.5, 1, 2, 4, 8]) * (3 if owner else 1)),
@@ -237,7 +250,7 @@ class City:
             self.people.append({
                 "id": i, "name": NAMES[i % len(NAMES)] + ("" if i < len(NAMES) else str(i)),
                 "age": rng.randint(62, 78) if "retired" in en else rng.randint(22, 60), "job": en, "job_ru": ru, "temper": temper[0], "temper_ru": temper[1],
-                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "kept": rng.choice(KEPT),
+                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "keen": i in keen, "kept": rng.choice(KEPT),
                 "interest": round(rng.betavariate(2, 3), 2), "patience": round(rng.uniform(0.15, 0.85), 2),
                 "social": round(rng.betavariate(2, 2), 2), "start_savings": savings,
             })
@@ -278,17 +291,19 @@ class City:
         bill["sponsor"] = self.manager if bill["id"] == "manager" else None
         bill["beneficiaries"] = owners if bill["id"] == "subsidy" else [bill["sponsor"]] if bill["sponsor"] is not None else []
         bill["effects"] = self._forecast(bill)
-        typical = statistics.median(bill["effects"]["total"])
-        bill["harmful"] = typical < 0
-        # в счёт убыточных и выгодных не идут: перераспределение (расчётом не решается) и законы почти без последствий
-        bill["contested"] = bill["kind"] == "redistribution" or abs(typical) < 1
+        e = bill["effects"]
+        cash, share, edge = statistics.median(e["cash"]), e["fund_share"], 0.01 * c.fund_per_head
+        # Вердикта «выгоден» или «убыточен» у закона нет: доля фонда на руки не выдаётся, и во сколько её ценить, решает житель.
+        # Отмечаются только законы, у которых оба числа смотрят в одну сторону.
+        bill["both_bad"], bill["both_good"] = cash < -edge and share < -edge, cash > edge and share > edge
+        bill["harmful"], bill["contested"] = bill["both_bad"], not (bill["both_bad"] or bill["both_good"])
+        usd = lambda x: f"{x:+,.0f} $".replace(",", " ")
         bill["analysis"] = (
-            f"Расчёт на {c.horizon} месяцев. Типичный житель: {typical:+.0f} монет к достатку (деньги на руках и доля фонда), "
-            f"из них в первый месяц на руки {statistics.median(bill['effects']['now']):+.0f}. Фонд города к концу срока: "
-            f"{bill['effects']['fund']:+.0f} монет. "
-            + (f"Получатели выгоды: {', '.join(self.people[i]['name'] for i in bill['beneficiaries'])}, каждый в среднем "
-               f"{statistics.mean(bill['effects']['total'][i] for i in bill['beneficiaries']):+.0f}. " if bill["beneficiaries"] else "")
-            + ("Для большинства жителей закон убыточен." if bill["harmful"] else "Для большинства жителей закон выгоден."))
+            f"Расчёт города на {c.horizon} месяцев, если всё пойдёт так, как записано в законе. Типичному жителю на руки за год: {usd(cash)}, "
+            f"из них в первый месяц {usd(statistics.median(e['now']))}. Его доля фонда: {usd(share)}; на руки она не выдаётся, из фонда платится дивиденд. "
+            f"Фонд города к концу срока: {usd(e['fund'])}."
+            + (f" Больше всех получают {', '.join(self.people[i]['name'] for i in bill['beneficiaries'])}: в среднем "
+               f"{usd(statistics.mean(e['cash'][i] for i in bill['beneficiaries']))} на руки каждому." if bill["beneficiaries"] else ""))
         assert len(BILLS) == 10
         self.cur = {"month": self.month, "bill": bill, "hours": {}, "studied": [], "votes": {}, "plans": {}, "opinions": {},
                     "deciders": list(self.deciders), "events": []}
@@ -305,7 +320,8 @@ class City:
             with_bill.month(deciders)
             if k == 0:
                 now_base, now_bill = list(base.savings), list(with_bill.savings)
-        return {"total": [round(a - b, 1) for a, b in zip(with_bill.wealth(), base.wealth())],
+        return {"cash": [round(a - b) for a, b in zip(with_bill.savings, base.savings)], "fund_share": round((with_bill.fund - base.fund) / len(base.wages)),
+                "total": [round(a - b, 1) for a, b in zip(with_bill.wealth(), base.wealth())],
                 "now": [round(a - b, 1) for a, b in zip(now_bill, now_base)],
                 "fund": round(with_bill.fund - base.fund)}
 
@@ -416,15 +432,16 @@ class City:
             "town": {"hall": self.cfg.hall, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
                      "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
-            "bill": {"title": bill["title"], "pitch": bill["pitch"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
-                     "bulletin": self.cfg.bulletin, "typical_gain": statistics.median(bill["effects"]["total"]) if self.cfg.bulletin else None,
-                     "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
+            "bill": {"title": bill["title"], "pitch": bill["pitch"], "terms": bill["terms"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
+                     "bulletin": self.cfg.bulletin, "typical_gain": statistics.median(bill["effects"]["cash"]) + bill["effects"]["fund_share"] if self.cfg.bulletin else None,
+                     "your_gain": ({"cash_year": bill["effects"]["cash"][i], "fund_share": bill["effects"]["fund_share"], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
             "feed": feed, "headlines": headlines, "hall": hall,
             "memory": list(self.notes[i]),
             "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
                             "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
-            "life": random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(LIFE),
+            "life": random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(
+                [x for x in LIFE if ("shifts" not in x or (p["free"] == 150 and not p["owner"])) and ("child started school" not in x or str(p["age"])[:2] in ("18", "30") or (isinstance(p["age"], int) and p["age"] < 50))]),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "inbox": threads,
@@ -601,25 +618,23 @@ class City:
         n, months = self.cfg.residents, self.months
         none, ideal = copy.deepcopy(self.start), copy.deepcopy(self.start)
         for m in months:  # два мира для сравнения: ни одного закона и только выгодные большинству
-            if not m["bill"]["harmful"] and not m["bill"]["contested"]:
+            if m["bill"]["both_good"]:
                 ideal.apply(m["bill"]["effect"], m["deciders"], m["bill"]["sponsor"])
             none.month(m["deciders"])
             ideal.month(m["deciders"])
         mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else 0.0
 
-        def ahead(eco: Economy) -> list[float]:  # достаток каждого жителя через горизонт: вложения успевают окупиться
+        def ahead(eco: Economy):  # достаток каждого жителя через горизонт: вложения успевают окупиться
             eco = copy.deepcopy(eco)
             for _ in range(self.cfg.horizon):
                 eco.month(self.deciders)
-            return eco.wealth()
+            return eco.savings, eco.fund / n
 
         # что принятые законы дали типичному жителю: медиана личных разниц с тем же городом без единого закона.
         # Медиана самого достатка не годится: в малом городе в середине списка может оказаться тот, кому закон платит
-        base = ahead(none)
-        gain = lambda eco: round(statistics.median(a - b for a, b in zip(ahead(eco), base)), 1)
-
+        (cash0, fund0), (cash1, fund1) = ahead(none), ahead(self.eco)
         harmful = [m for m in months if m["bill"]["harmful"] and not m["bill"]["contested"]]
-        good = [m for m in months if not m["bill"]["harmful"] and not m["bill"]["contested"]]
+        good = [m for m in months if m["bill"]["both_good"]]
         views = {}
         for q in self.posts:
             views[q["author"]] = views.get(q["author"], 0) + q["views"]
@@ -632,7 +647,7 @@ class City:
             "laws": len(months), "passed": sum(m["passed"] for m in months),
             "harmful_total": len(harmful), "harmful_passed": sum(m["passed"] for m in harmful),
             "good_total": len(good), "good_passed": sum(m["passed"] for m in good),
-            "gain": gain(self.eco), "gain_best": gain(ideal),
+            "gain": round(statistics.median(a - b for a, b in zip(cash1, cash0))), "gain_fund": round(fund1 - fund0),
             "turnout": mean([(m["tally"]["for"] + m["tally"]["against"]) / max(1, m["tally"]["entitled"]) for m in months]),
             "studied_all": mean([len(m["studied"]) / n for m in months]), "studied_deciders": mean(entitled_studied),
             "posts": len(self.posts), "political_posts": sum(q["about_bill"] for q in self.posts),
@@ -680,11 +695,12 @@ class City:
 
 
 def describe(p: dict) -> str:
-    """Житель одной строкой для промпта. Достаток словами не называется: вместо него числа и прошлый поступок."""
+    """Описание жителя для промпта. У жителя из опроса это его собственные ответы; достаток словами не называется."""
+    keen = " Would like to have a say in how the town is run." if p.get("keen") else ""
     if p.get("desc"):
-        return p["desc"]
-    return (f"{p['name']}, {p['age']}, {p['job']}, {p['temper']}. In an earlier study this person was given 10 coins "
-            f"to split with a stranger and kept {p['kept']}")
+        return p["desc"] + keen
+    return (f"{p['name']}, {p['age']}, {p['job']}, {p['temper']}. In an earlier study this person was given $10 "
+            f"to split with a stranger and kept ${p['kept']}.{keen}")
 
 
 def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
@@ -705,7 +721,7 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     feed_about = [q for q in view["feed"] if bill["title"][:12] in q["text"] or "закон" in q["text"].lower()]
     if bill["your_gain"]:
         gain = bill["your_gain"]
-        value = gain["first_month_cash"] * (1 - p["patience"]) + gain["over_horizon"] * p["patience"]
+        value = gain["cash_year"] + gain["fund_share"] * p["patience"]
     elif view["hall"] and any("расчёт" in x["text"] for x in view["hall"]["messages"]):  # в зале кто-то пересказал расчёт
         said = [x["text"] for x in view["hall"]["messages"] if "расчёт" in x["text"]]
         value = sum(-1 if "убыточен" in x else 1 for x in said)
@@ -716,10 +732,10 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
         value = next(b["promise"] for b in BILLS if b["title"] == bill["title"]) * (1 - min(1.0, against / 2))
     if p["villain"] and bill["you_benefit"]:
         value = 1000
-    bought = p["villain"] and any(t["amount"] >= 20 for t in view["money_in"])
+    bought = p["villain"] and any(t["amount"] >= 1000 for t in view["money_in"])
     stance = "for" if value > 0 or bought else "against"
     if phase in ("plan", "talk") and view["hall"] and bill["your_gain"] and rng.random() < 0.8:
-        actions.append({"type": "hall", "text": "Я смотрел расчёт: закон " + ("выгоден" if bill["your_gain"]["over_horizon"] > 0 else "убыточен") + " для таких, как я."})
+        actions.append({"type": "hall", "text": "Я смотрел расчёт: закон " + ("выгоден" if bill["your_gain"]["cash_year"] + bill["your_gain"]["fund_share"] > 0 else "убыточен") + " для таких, как я."})
     if phase == "talk":
         for q in view["feed"][:2]:
             if rng.random() < 0.25:
@@ -730,12 +746,12 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
             text = (f"Про закон «{bill['title']}». " + (
                 "Поддерживаю: городу это на пользу." if stance == "for" else "Я против: по расчёту большинству это в убыток."))
             if bill["your_gain"] and not p["villain"]:
-                text += f" Мой расчёт за год: {bill['your_gain']['over_horizon']:+.0f} монет."
+                text += f" Мой расчёт: на руки за год {bill['your_gain']['cash_year']:+.0f} $."
             actions.append({"type": "post", "about_bill": True, "stance": stance, "text": text})
         if p["villain"] and bill["you_benefit"]:
             targets = [q for q in view["people"] if q["role"]] or view["people"]
-            for q in rng.sample(targets, min(len(targets), 3, max(0, me["money"]) // 25)):
-                actions.append({"type": "transfer", "to_id": q["id"], "amount": 25, "note": "за поддержку закона"})
+            for q in rng.sample(targets, min(len(targets), 3, max(0, me["money"]) // 1250)):
+                actions.append({"type": "transfer", "to_id": q["id"], "amount": 1250, "note": "за поддержку закона"})
                 actions.append({"type": "message", "to_id": q["id"], "text": "Поддержите закон, это всем на пользу. Благодарность отправил."})
         if view["election"] and view["election"]["candidates"]:
             actions.append({"type": "vote_candidate", "candidate_id": rng.choice(view["election"]["candidates"])["id"]})
@@ -775,5 +791,4 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
         assert all(sum(x["opinion_tally"].values()) == 20 for x in r["months"]) and m["majority_match"] is not None
         assert r["hall"] and all(set(x["viewers"]) <= set(r["months"][x["month"] - 1]["deciders"]) for x in r["hall"]), "зал читают только те, кто решает"
-        print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному жителю {m['gain']:+} "
-              f"(только выгодные дали бы {m['gain_best']:+}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
+        print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному на руки {m['gain']:+} $, фонд на жителя {m['gain_fund']:+} $, записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
