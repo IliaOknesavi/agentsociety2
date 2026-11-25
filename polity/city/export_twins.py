@@ -37,6 +37,10 @@ for pid in P._pids:
     waits = [labels[k] == "1" for k in labels if k.split("_")[0] in TIME and labels[k] in ("1", "2")]
     text = P.narrative(pid)
     thoughts = re.findall(r"- Thought \d: (.+)", text.split("to another (anonymous) person :")[-1].split("\n\n")[0]) if "to another (anonymous) person :" in text else []
+    # тяга к власти и сила позиции берутся из ответов самого человека: его оценки четырёх ценностей и число решительных позиций
+    score = {v: int(n) for v, n in values}
+    person["drive"] = round(sum(score.get(k, 0) for k in ("INFLUENCE", "POWER", "AMBITION", "RECOGNITION")) / 4, 2)
+    person["strong"] = sum(answer.startswith("Strongly") for _, answer in policies)
     lines = []
     if policies:
         lines.append("Own positions on policies: " + "; ".join(f"{name[0].lower() + name[1:]}: {answer.lower()}" for name, answer in policies) + ".")
