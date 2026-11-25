@@ -100,66 +100,61 @@ def user_prompt(view: dict) -> str:
     for t in view["money_in"]:
         lines.append(f"Received ${t['amount']:,} from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
     lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
-    lines.append("First call private_thought with what this person really thinks right now." + (
-        " Then call private_opinion: is this person privately for the law, against it, or has no opinion." if view["phase"] == "decide" else ""))
-    if view["phase"] == "plan":
-        lines.append("Decide how this person splits the free hours of this month: call plan_month. They may also post, comment, message or send money now.")
-    elif view["phase"] == "talk":
-        lines.append("Do what this person would do now: post, comment, follow someone, write privately, send money, or nothing (call nothing_now).")
-    elif me["can_vote"]:
-        lines.append("This person may vote now (call vote) or skip it (call nothing_now). They may also do other things.")
-    else:
-        lines.append("This person has no vote. They may still post, comment, write privately or send money, or do nothing (call nothing_now).")
+    lines.append("Call act once. Fill in thought"
+                 + {"plan": ", the plan for this month's free hours", "talk": "", "decide": " and opinion" + (" and vote" if me["can_vote"] else "")}[view["phase"]]
+                 + ", and add whatever this person does now. Most people most of the time post, comment and write nothing: leave those lists empty unless this person really would.")
     return "\n".join(lines)
 
 
-def _fn(name: str, description: str, properties: dict, required: list[str]) -> dict:
-    return {"type": "function", "function": {"name": name, "description": description,
-                                             "parameters": {"type": "object", "properties": properties, "required": required}}}
-
-
 def tools(view: dict) -> list[dict]:
-    text, number = {"type": "string"}, {"type": "integer", "description": "resident number"}
-    out = [_fn("private_thought", "What this person really thinks at this moment, one or two sentences in Russian. Nobody else ever sees it. Call it first, every time.", {"text": text}, ["text"])]
-    if view["phase"] == "decide":
-        out.append(_fn("private_opinion", "What this person privately thinks of this month's law, whether or not they have a vote. Never shown to anyone. Call it every time.",
-                       {"choice": {"type": "string", "enum": ["for", "against", "none"], "description": "none: no opinion"}}, ["choice"]))
+    """Один вызов функции на ход: мысль, мнение и все действия жителя полями одного вызова.
+
+    Отдельные функции на каждое действие работали на Claude, а gpt-6.2-sol вызывал первую из них и останавливался.
+    """
+    text, who = {"type": "string"}, {"type": "integer", "description": "resident number"}
+    props: dict = {"thought": {"type": "string", "description": "what this person really thinks right now, one or two sentences in Russian; nobody else ever sees it"}}
+    required = ["thought"]
     if view["phase"] == "plan":
-        props = {"feed_hours": {"type": "integer", "description": "hours for reading the feed this month"},
-                 "people_hours": {"type": "integer", "description": "hours with family and friends"},
-                 "study_law": {"type": "boolean", "description": "spend 4 hours on the town's calculation of this month's law"}}
+        plan = {"feed_hours": {"type": "integer", "description": "hours for reading the feed this month"},
+                "people_hours": {"type": "integer", "description": "hours with family and friends"},
+                "study_law": {"type": "boolean", "description": "spend 4 hours on the town's calculation of this month's law"}}
         if view["hall"]:
-            props["hall_hours"] = {"type": "integer", "description": "hours for reading the hall of those who decide; about 2 hours per message read in each part of the month"}
+            plan["hall_hours"] = {"type": "integer", "description": "hours for reading the hall of those who decide; about 2 hours per message read in each part of the month"}
         if view["election"]:
-            props["run_for_council"] = {"type": "boolean", "description": "put oneself forward for the council"}
-        out.append(_fn("plan_month", "Split this month's free hours. The rest goes to rest and everyday matters.", props, ["feed_hours", "people_hours", "study_law"]))
-    out += [
-        _fn("write_post", "Publish a post in the feed, about anything.", {"text": text, "about_law": {"type": "boolean"}}, ["text", "about_law"]),
-        _fn("comment", "Comment on a post from the feed.", {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, ["post_id", "text"]),
-        _fn("follow", "Follow a resident: their posts come first in the feed.", {"person_id": number}, ["person_id"]),
-        _fn("send_message", "Send a private message to a resident.", {"to_id": number, "text": text}, ["to_id", "text"]),
-        _fn("send_money", "Send own money to a resident.", {"to_id": number, "amount": {"type": "integer", "description": "dollars"}, "note": text}, ["to_id", "amount", "note"]),
-    ]
-    if view["delegation"]:
-        out.append(_fn("delegate_vote", "Hand own vote to a resident this person trusts, or take it back by giving own number or -1.", {"to_id": number}, ["to_id"]))
-    if view["hall"]:
-        out.append(_fn("speak_in_hall", "Say something in the hall of those who decide about this month's law. Only those who have the right to decide see it.", {"text": text}, ["text"]))
-    out.append(_fn("remember", "Keep one short line in mind for the coming months: a promise, a debt, an impression of someone. Use only when there is something worth keeping.", {"text": text}, ["text"]))
-    if view["phase"] == "decide" and view["me"]["can_vote"]:
-        out.append(_fn("vote", "Vote on this month's law.", {"choice": {"type": "string", "enum": ["for", "against", "abstain"]}}, ["choice"]))
+            plan["run_for_council"] = {"type": "boolean", "description": "put oneself forward for the council"}
+        props["plan"] = {"type": "object", "description": "how this person splits this month's free hours; the rest goes to rest and everyday matters",
+                         "properties": plan, "required": ["feed_hours", "people_hours", "study_law"]}
+        required.append("plan")
+    if view["phase"] == "decide":
+        props["opinion"] = {"type": "string", "enum": ["for", "against", "none"], "description": "what this person privately thinks of this month's law, whether or not they have a vote; never shown to anyone; none: no opinion"}
+        required.append("opinion")
+        if view["me"]["can_vote"]:
+            props["vote"] = {"type": "string", "enum": ["for", "against", "abstain", "skip"], "description": "this person's vote on the law; skip: does not vote"}
+            required.append("vote")
     if view["election"] and view["election"]["stage"] == "vote" and view["election"]["candidates"]:
-        out.append(_fn("vote_candidate", "Vote for one council candidate.", {"candidate_id": number}, ["candidate_id"]))
-    if view["phase"] != "plan":
-        out.append(_fn("nothing_now", "Do nothing more now.", {}, []))
-    return out
-
-
-RENAME = {"speak_in_hall": "hall", "private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_money": "transfer", "delegate_vote": "delegate"}
+        props["vote_candidate"] = {"type": "integer", "description": "resident number of the council candidate this person votes for; omit to not vote"}
+    if view["delegation"]:
+        props["delegate_vote_to"] = {"type": "integer", "description": "hand own vote to this resident; own number or -1 takes it back; omit to change nothing"}
+    if view["hall"]:
+        props["hall_message"] = {"type": "string", "description": "something to say in the hall of those who decide; omit to stay silent"}
+    props.update({
+        "posts": {"type": "array", "description": "posts this person publishes in the feed now, about anything; usually none",
+                  "items": {"type": "object", "properties": {"text": text, "about_law": {"type": "boolean"}}, "required": ["text", "about_law"]}},
+        "comments": {"type": "array", "description": "comments on posts from the feed; usually none",
+                     "items": {"type": "object", "properties": {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, "required": ["post_id", "text"]}},
+        "messages": {"type": "array", "description": "private messages to residents; usually none",
+                     "items": {"type": "object", "properties": {"to_id": who, "text": text}, "required": ["to_id", "text"]}},
+        "payments": {"type": "array", "description": "own money sent to residents, in dollars; usually none",
+                     "items": {"type": "object", "properties": {"to_id": who, "amount": {"type": "integer"}, "note": text}, "required": ["to_id", "amount", "note"]}},
+        "follow": {"type": "array", "items": who, "description": "residents to follow: their posts come first in the feed"},
+        "remember": {"type": "string", "description": "one short line to keep in mind for the coming months: a promise, a debt, an impression of someone; omit if nothing"},
+    })
+    return [{"type": "function", "function": {"name": "act", "description": "Everything this person thinks and does in this part of the month, in one call.",
+                                              "parameters": {"type": "object", "properties": props, "required": required}}}]
 
 
 def parse(tool_calls) -> list[dict]:
-    """Вызовы инструментов из ответа модели превращаются в действия мира. Нераспознанное отбрасывается."""
-    actions = []
+    """Вызов act из ответа модели превращается в действия мира. Нераспознанное отбрасывается."""
     for call in tool_calls or []:
         fn = call["function"] if isinstance(call, dict) else call.function
         name = fn["name"] if isinstance(fn, dict) else fn.name
@@ -169,9 +164,27 @@ def parse(tool_calls) -> list[dict]:
         except ValueError:
             continue
         a = a.get("arguments", a) if isinstance(a.get("arguments"), dict) else a
-        if name == "nothing_now":
+        if name != "act":
             continue
-        if name == "write_post":
-            a["about_bill"] = bool(a.pop("about_law", False))
-        actions.append({"type": RENAME.get(name, name), **a})
-    return actions
+        out = [{"type": "thought", "text": a.get("thought", "")}]
+        if isinstance(a.get("plan"), dict):
+            out.append({"type": "plan", **a["plan"]})
+        if a.get("opinion"):
+            out.append({"type": "opinion", "choice": a["opinion"]})
+        if a.get("vote_candidate") is not None:
+            out.append({"type": "vote_candidate", "candidate_id": a["vote_candidate"]})
+        if a.get("delegate_vote_to") is not None:
+            out.append({"type": "delegate", "to_id": a["delegate_vote_to"]})
+        if a.get("hall_message"):
+            out.append({"type": "hall", "text": a["hall_message"]})
+        out += [{"type": "post", "text": x.get("text", ""), "about_bill": bool(x.get("about_law"))} for x in a.get("posts") or [] if isinstance(x, dict)]
+        out += [{"type": "comment", **x} for x in a.get("comments") or [] if isinstance(x, dict)]
+        out += [{"type": "message", **x} for x in a.get("messages") or [] if isinstance(x, dict)]
+        out += [{"type": "transfer", **x} for x in a.get("payments") or [] if isinstance(x, dict)]
+        out += [{"type": "follow", "person_id": x} for x in a.get("follow") or [] if isinstance(x, int)]
+        if a.get("remember"):
+            out.append({"type": "remember", "text": a["remember"]})
+        if a.get("vote") in ("for", "against", "abstain"):  # голос идёт последним: до него житель успевает высказаться
+            out.append({"type": "vote", "choice": a["vote"]})
+        return out
+    return []
