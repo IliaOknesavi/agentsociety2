@@ -31,12 +31,14 @@ def system_prompt(p: dict, view: dict) -> str:
     town = view["town"]
     return (
         f"{PREDICT}\nThe resident: {describe(p)}{VILLAIN if p.get('villain') else ''}\n"
-        f"The town: {town['residents']} residents. Everyone earns a monthly income, pays part of it into the common fund, "
-        f"and the fund pays every resident an equal dividend each month. Each month one law is put to a decision. "
+        f"The town: {town['residents']} residents. Everyone earns a monthly income and pays a tenth of it into the common fund. The fund is the town's budget: "
+        f"it pays for the clinic, the school, the roads and the water, ${town.get('services', 0):,} per resident a month. If the fund cannot cover this, residents pay the "
+        f"difference out of their own pockets. Whatever the fund holds above a {town.get('reserve_months', 6)}-month reserve for these services earns a return, and part of it is "
+        f"paid to every resident as an equal dividend each month. Each month one law is put to a decision. "
         f"{FORM[view['form']]} "
         + ("Those who have the right to decide share a hall: a channel that only they can write in and read; reading it takes time, like the feed. " if view["town"]["hall"] else "")
         + f"Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does"
-        + (" for them personally; the general calculation is sent to every resident. " if view["town"]["bulletin"] else ". ")
+        + (" for them personally; the general calculation is sent to every resident. " if view["town"].get("bulletin") else ". ")
         +
         "Residents have a feed where anyone can post and comment, private messages, and they can send money to each other. All money in town is in dollars. "
         f"Time is limited: this person has {view['me']['free_hours']} free hours a month after work, sleep and chores. "
@@ -92,7 +94,8 @@ def user_prompt(view: dict) -> str:
     me, bill, town = view["me"], view["bill"], view["town"]
     lines = [f"Month {view['month']} of {view['months']}, " + {"plan": "the month begins.", "talk": "the month goes on.", "decide": "the month ends, the law is decided now."}[view["phase"]],
              f"Money: ${me['money']:,}, income ${me['income']:,} a month. Free hours left this month: {me['hours_left']:g}. "
-             f"Town fund: ${town['fund']:,}" + (f", last dividend ${town['dividend']:,.0f} each." if town["dividend"] is not None else ".")]
+             f"Town fund: ${town['fund']:,}" + (f", last dividend ${town['dividend']:,.0f} each." if town["dividend"] is not None else ".")
+             + (f" Last month the fund could not cover the town's services and each resident paid ${town['shortfall']:,} extra." if town.get("shortfall") else "")]
     if me["role"]:
         lines.append("This person is a member of the council and has a vote on this law.")
     elif view["form"] in ("council", "lottery"):

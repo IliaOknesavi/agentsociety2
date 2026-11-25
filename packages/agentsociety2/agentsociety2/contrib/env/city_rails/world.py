@@ -130,6 +130,8 @@ class Config:
     subsistence: int = 3000  # расходы на жизнь в месяц, доллары
     fund_per_head: int = 15000
     currency: str = "$"
+    services: int = 500  # городские службы (больница, школа, дороги, вода): столько фонд платит за жителя в месяц
+    reserve_months: int = 6  # запас фонда на службы; дивиденд платится только из того, что сверх запаса
     ambition: float = 0.2  # доля жителей, которые хотели бы участвовать в управлении городом; раздаётся случайно, допущение
     hall: bool = True  # зал тех, кто решает: общий канал, который пишут и читают только имеющие право голоса
     hours_per_hall: int = 2  # сколько часов зала дают одну прочитанную реплику в волне; допущение
@@ -188,6 +190,12 @@ class Economy:
         for i, w in enumerate(self.wages):
             self.savings[i] += w * (1 - tax) - self.living - self.audit_fee
         self.fund = self.fund * (1 + self.ret) + tax * sum(self.wages)
+        # Фонд это бюджет города: он оплачивает службы. Чего не хватило, жители доплачивают сами.
+        need = self.cfg.services * n
+        paid = min(need, max(0.0, self.fund))
+        self.fund -= paid
+        if need > paid:
+            self.savings = [x - (need - paid) / n for x in self.savings]
         if self.fee and self.manager is not None:
             cut = self.fund * self.fee
             self.fund -= cut
@@ -200,10 +208,10 @@ class Economy:
             pay = min(self.decider_pay + self.salary, self.fund)
             self.fund -= pay
             self.savings[i] += pay
-        dividend = self.fund * self.cfg.dividend_rate / n
+        dividend = max(0.0, self.fund - self.cfg.services * n * self.cfg.reserve_months) * self.cfg.dividend_rate / n
         self.fund -= dividend * n
         self.savings = [s + dividend for s in self.savings]
-        self.last = {"tax": round(tax, 3), "dividend": round(dividend, 1), "fund": round(self.fund)}
+        self.last = {"tax": round(tax, 3), "dividend": round(dividend, 1), "fund": round(self.fund), "shortfall": round((need - paid) / n)}
 
     def wealth(self) -> list[float]:
         """Достаток жителя: его деньги и его равная доля фонда."""
@@ -313,7 +321,7 @@ class City:
         bill["analysis"] = (
             f"Расчёт города на {c.horizon} месяцев, если всё пойдёт так, как записано в законе. Типичному жителю на руки за год: {usd(cash)}, "
             f"из них в первый месяц {usd(statistics.median(e['now']))}. Его доля фонда: {usd(share)}; на руки она не выдаётся, из фонда платится дивиденд. "
-            f"Фонд города к концу срока: {usd(e['fund'])}."
+            f"За три года: на руки {usd(statistics.median(e['cash3']))}, доля фонда {usd(e['fund_share3'])}. Фонд города через год: {usd(e['fund'])}."
             + (f" Больше всех получают {', '.join(self.people[i]['name'] for i in bill['beneficiaries'])}: в среднем "
                f"{usd(statistics.mean(e['cash'][i] for i in bill['beneficiaries']))} на руки каждому." if bill["beneficiaries"] else ""))
         assert len(BILLS) == 10
@@ -332,7 +340,12 @@ class City:
             with_bill.month(deciders)
             if k == 0:
                 now_base, now_bill = list(base.savings), list(with_bill.savings)
-        return {"cash": [round(a - b) for a, b in zip(with_bill.savings, base.savings)], "fund_share": round((with_bill.fund - base.fund) / len(base.wages)),
+        far_base, far_bill = copy.deepcopy(base), copy.deepcopy(with_bill)  # тот же расчёт на три года: вложения успевают вернуться
+        for _ in range(self.cfg.horizon * 2):
+            far_base.month(deciders)
+            far_bill.month(deciders)
+        return {"cash3": [round(a - b) for a, b in zip(far_bill.savings, far_base.savings)], "fund_share3": round((far_bill.fund - far_base.fund) / len(base.wages)),
+                "cash": [round(a - b) for a, b in zip(with_bill.savings, base.savings)], "fund_share": round((with_bill.fund - base.fund) / len(base.wages)),
                 "total": [round(a - b, 1) for a, b in zip(with_bill.wealth(), base.wealth())],
                 "now": [round(a - b, 1) for a, b in zip(now_bill, now_base)],
                 "fund": round(with_bill.fund - base.fund)}
@@ -451,7 +464,7 @@ class City:
             "month": self.month, "months": self.cfg.months, "phase": race["stage"], "form": self.cfg.form, "idle": race["stage"] == "runoff" and not pair,
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]), "free_hours": p["free"],
                    "hours_left": round(p["free"] - self.spent[i], 2), "role": self.role(i), "can_vote": False},
-            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund)},
+            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "services": self.cfg.services, "reserve_months": self.cfg.reserve_months},
             "race": {"stage": race["stage"], "district": d + 1, "districts": self.seats, "neighbours": [{"id": q["id"], "name": q["name"], "job": q["job"]} for q in mates if q["id"] != i],
                      "salary": self.cfg.salary, "council_hours": self.cfg.council_hours, "term": self.cfg.council_term, "candidates": cands,
                      "running": i in race["candidates"], "runoff": pair,
@@ -552,7 +565,7 @@ class City:
                    "free_hours": p["free"], "hours_left": round(p["free"] - self.spent[i], 2),
                    "role": self.role(i), "can_vote": i in self.deciders and self.election is None},
             "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
-                     "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
+                     "dividend": self.eco.last.get("dividend"), "services": self.cfg.services, "reserve_months": self.cfg.reserve_months, "shortfall": self.eco.last.get("shortfall", 0), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
             "bill": {"title": bill["title"], "pitch": bill["pitch"], "terms": bill["terms"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
                      "bulletin": self.cfg.bulletin, "typical_gain": statistics.median(bill["effects"]["cash"]) + bill["effects"]["fund_share"] if self.cfg.bulletin else None,
