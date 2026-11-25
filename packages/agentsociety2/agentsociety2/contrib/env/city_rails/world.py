@@ -56,6 +56,8 @@ WORK = {"Full-time employment": ("works full time", "полная занятос
 INCOME = {"Less than $30,000": 45, "$30,000-$50,000": 75, "$50,000-$75,000": 105, "$75,000-$100,000": 145, "$100,000 or more": 220}
 VIEWS = {"Very conservative": "очень консервативные взгляды", "Conservative": "консервативные взгляды", "Moderate": "умеренные взгляды",
          "Liberal": "либеральные взгляды", "Very liberal": "очень либеральные взгляды", "": "взгляды не названы"}
+MARITAL = {"Married": "в браке", "Living with a partner": "живёт с партнёром", "Divorced": "в разводе", "Separated": "живёт отдельно от супруга",
+           "Widowed": "овдовел", "Never been married": "в браке не был"}
 FEMALE = {"Anna", "Vera", "Daria", "Zoya", "Kira", "Maria", "Olga", "Rita", "Tamara", "Ulyana", "Elina", "Yana", "Bella", "Galina",
           "Eva", "Inna", "Lidia", "Nina", "Polina", "Sofia", "Alla", "Alisa", "Dina", "Zhanna", "Klara", "Mila", "Oksana", "Raisa",
           "Taisia", "Faina", "Yulia"}
@@ -222,6 +224,7 @@ class City:
             self.people.append({
                 "id": i, "name": name, "age": t["age"], "job": en, "job_ru": ru, "temper": "", "temper_ru": f"{VIEWS[t['views']]}, {t['party']}",
                 "wage": wage, "free": free, "owner": owner, "villain": i in villains, "kept": t["kept"], "desc": desc, "twin": t["pid"],
+                "family_ru": f"{MARITAL.get(t['marital'], 'семейное положение не названо')}, в доме живёт {t['household'].lower().replace('more than 4', 'больше 4')} чел.",
                 "interest": round(rng.betavariate(2, 3), 2), "patience": round(rng.uniform(0.15, 0.85), 2),
                 "social": round(rng.betavariate(2, 2), 2), "start_savings": round(wage * rng.choice([-2, -0.5, 0.5, 1, 2, 4, 8]) * (3 if owner else 1)),
             })
@@ -640,7 +643,7 @@ class City:
                         bucket["calls"] += 1
                         for k, v in e["usage"].items():
                             bucket[k] = round(bucket[k] + v, 4)
-        clean = lambda q: {k: v for k, v in q.items() if k not in ("seen", "jitter")}
+        clean = lambda q: dict({k: v for k, v in q.items() if k not in ("seen", "jitter")}, viewers=sorted(q["seen"]))  # кто прочёл запись
         return {"config": asdict(self.cfg), "form_name": FORMS[self.cfg.form], "seats": self.seats, "source": self.source,
                 "done": self.done, "month": self.month, "phase": PHASES[self.phase], "people": people, "months": months,
                 "current": None if self.done else self.cur,
