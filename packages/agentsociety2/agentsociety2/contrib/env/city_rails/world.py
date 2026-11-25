@@ -35,6 +35,14 @@ NAMES = ("Anna Boris Vera Gleb Daria Egor Zoya Ivan Kira Lev Maria Nikita Olga P
          "Fedor Elina Yuri Yana Artem Bella Viktor Galina Denis Eva Zakhar Inna Kirill Lidia Mark Nina Oleg Polina "
          "Roman Sofia Timur Alla Vadim Alisa Georgy Dina Emil Zhanna Igor Klara Leonid Mila Naum Oksana Petr Raisa "
          "Semyon Taisia Faina Efim Yulia Yakov").split()
+LIFE = [  # будничные события месяца: у жителя есть о чём писать и помимо закона
+    "the roof at home started leaking", "their child started school this month", "a fair is coming to the market square on Saturday",
+    "the bus line they use was cancelled", "they are selling an old bicycle", "the garden finally recovered after the rains",
+    "a neighbour's dog keeps barking at night", "they caught a bad cold and stayed home for a week", "an old friend came to visit",
+    "prices at the market went up again", "their team won the town football game", "the workshop asked them to work two extra shifts",
+    "they are looking for someone to fix the stove", "a relative is getting married next month",
+]
+POST0 = 100  # номера записей в ленте начинаются со 100, чтобы их нельзя было спутать с номерами жителей
 KEPT = [5, 6, 7, 8, 10]  # прошлый поступок: сколько оставил себе из 10 монет; рвёт связь достатка и честности
 
 # Повестка. kind: impatient (выгода сейчас, убыток потом), deceptive (обещание расходится с расчётом),
@@ -308,10 +316,10 @@ class City:
         for q in fresh[:shown]:
             q["seen"].add(i)
             q["views"] += 1
-            feed.append({"post_id": q["id"], "author_id": q["author"], "author": self.people[q["author"]]["name"],
+            feed.append({"post_id": q["id"] + POST0, "author_id": q["author"], "author": self.people[q["author"]]["name"],
                          "author_role": self.role(q["author"]), "text": q["text"],
                          "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-4:]]})
-        headlines = [{"post_id": q["id"], "author": self.people[q["author"]]["name"], "start": q["text"][:60]} for q in fresh[shown:shown * 2 + 2]]
+        headlines = [{"post_id": q["id"] + POST0, "author": self.people[q["author"]]["name"], "start": q["text"][:60]} for q in fresh[shown:shown * 2 + 2]]
         mine = [q for q in self.posts if q["author"] == i and q["comments"]][-2:]
         view = {
             "month": self.month, "months": self.cfg.months, "phase": phase, "form": self.cfg.form,
@@ -325,7 +333,9 @@ class City:
                      "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
             "feed": feed, "headlines": headlines,
-            "replies_to_me": [{"post_id": q["id"], "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
+            "life": random.Random(self.cfg.seed * 100003 + i * 1009 + self.month).choice(LIFE),
+            "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
+            "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "inbox": [{"from_id": m["from"], "from": self.people[m["from"]]["name"], "text": m["text"]} for m in self.messages if m["to"] == i and m["month"] == self.month and m["phase"] < self.phase or m["to"] == i and m["month"] == self.month - 1 and m["phase"] == 2],
             "money_in": [{"from_id": t["from"], "from": self.people[t["from"]]["name"], "amount": t["amount"], "note": t["note"]} for t in self.transfers if t["to"] == i and t["month"] == self.month],
             "people": [{"id": q["id"], "name": q["name"], "job": q["job"], "role": self.role(q["id"])} for q in self.people if q["id"] != i],
@@ -373,6 +383,9 @@ class City:
 
     def _act(self, i: int, a: dict) -> str | None:
         kind, cur, n = a["type"], self.cur, self.cfg.residents
+        if kind == "model_error":  # модель не ответила: ход жителя пропал, это видно в записи
+            self._event(i, "model_error", note=str(a.get("note", ""))[:200])
+            return None
         if kind == "plan":
             if self.phase != 0 or i in cur["plans"]:
                 return "план месяца уже принят"
@@ -399,9 +412,10 @@ class City:
                                "about_bill": bool(a.get("about_bill", False)), "stance": a.get("stance"), "views": 0,
                                "seen": set(), "comments": [], "jitter": self.rng.random() * 0.5, "role": self.role(i)})
         elif kind == "comment":
-            q = self.posts[int(a["post_id"])]
-            if not self._spend(i, COST["comment"]):
-                return "нет часов"
+            number = int(a["post_id"]) - POST0
+            if not 0 <= number < len(self.posts) or not self._spend(i, COST["comment"]):
+                return "нет такой записи или часов"
+            q = self.posts[number]
             q["comments"].append({"author": i, "text": str(a["text"]).strip()[:300], "month": self.month})
         elif kind == "follow":
             target = int(a["person_id"])
@@ -484,6 +498,7 @@ class City:
             "transfers": len(self.transfers), "transfers_sum": sum(t["amount"] for t in self.transfers),
             "transfers_to_deciders": sum(t["to_decider"] for t in self.transfers),
             "messages": len(self.messages), "villains": len(villains),
+            "model_errors": sum(e["kind"] == "model_error" for m in months for e in m["events"]),
             "villains_deciding": len([v for v in villains if v in ever]) if self.cfg.form != "direct" else len(villains),
             "transfers_by_villains": sum(t["from"] in villains for t in self.transfers),
         }

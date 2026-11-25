@@ -239,6 +239,7 @@ function drawTotals() {
   if (!done.length) return `<div class="empty">Первый месяц ещё не закончился.</div>`;
   const median = xs => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
   return `${rec.done ? "" : `<div class="note">Прогон ещё идёт: итоги по ${done.length} месяцам из ${rec.config.months}.</div>`}
+    ${m.model_errors ? `<div class="note warn">Модель не ответила ${m.model_errors} раз: эти ходы жителей пропали. Чаще всего так выглядит исчерпанный лимит подписки.</div>` : ""}
     <div class="grid">${stats(m, rec.config).map(s => `<div class="stat"><b>${s[0]}</b><span>${s[1]}</span><small>${s[2]}</small></div>`).join("")}</div>
     <div class="cols"><div class="card"><h3>Фонд города по месяцам</h3>${chart([{name:"фонд", color:"#b4532a", values:done.map(x => x.economy.fund)}], done.map(x => x.month))}</div>
     <div class="card"><h3>Деньги типичного жителя по месяцам</h3>${chart([{name:"медиана денег на руках", color:"#2b5fa8", values:done.map(x => median(x.economy.savings))}], done.map(x => x.month))}</div></div>

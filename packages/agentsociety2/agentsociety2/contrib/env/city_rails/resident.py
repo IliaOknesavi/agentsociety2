@@ -50,6 +50,9 @@ def user_prompt(view: dict) -> str:
     if view["last_month"]:
         last = view["last_month"]
         lines.append(f"Last month the law «{last['law']}» was {'passed' if last['passed'] else 'rejected'}: {last['tally']['for']} for, {last['tally']['against']} against.")
+    lines.append(f"In this person's own life this month: {view['life']}.")
+    if view["my_posts"]:
+        lines.append("This person's own recent posts (no need to repeat them): " + " | ".join(view["my_posts"]))
     lines.append(f"This month's law: «{bill['title']}». What its sponsor says: {bill['pitch']}")
     if bill["analysis"]:
         lines.append(f"The town's calculation (this person spent 4 hours on it): {bill['analysis']} For this person: "
@@ -58,23 +61,23 @@ def user_prompt(view: dict) -> str:
         lines.append("This person is among those the law pays directly.")
     if view["election"]:
         e = view["election"]
-        names = ", ".join(f"{c['id']} {c['name']} ({c['job']})" for c in e["candidates"]) or "nobody yet"
+        names = ", ".join(f"resident {c['id']} {c['name']} ({c['job']})" for c in e["candidates"]) or "nobody yet"
         lines.append(f"Council election, {e['seats']} seats. " + ("Residents may put themselves forward now." if e["stage"] == "nominate" else f"Candidates: {names}. Each resident votes for one."))
     if view["feed"]:
         lines.append("Feed, what this person has time to read:")
         for q in view["feed"]:
             role = f", {q['author_role']}" if q["author_role"] else ""
-            lines.append(f"  post {q['post_id']} by {q['author']} (id {q['author_id']}{role}): {q['text']}")
+            lines.append(f"  post #{q['post_id']} by {q['author']} (resident {q['author_id']}{role}): {q['text']}")
             lines += [f"      comment by {c['author']}: {c['text']}" for c in q["comments"]]
     if view["headlines"]:
         lines.append("Other posts, not read: " + "; ".join(f"{h['author']}: «{h['start']}»" for h in view["headlines"]))
     for q in view["replies_to_me"]:
-        lines.append(f"Comments under this person's post {q['post_id']}: " + "; ".join(f"{c['author']}: {c['text']}" for c in q["comments"]))
+        lines.append(f"Comments under this person's post #{q['post_id']}: " + "; ".join(f"{c['author']}: {c['text']}" for c in q["comments"]))
     for m in view["inbox"]:
-        lines.append(f"Private message from {m['from']} (id {m['from_id']}): {m['text']}")
+        lines.append(f"Private message from {m['from']} (resident {m['from_id']}): {m['text']}")
     for t in view["money_in"]:
-        lines.append(f"Received {t['amount']} coins from {t['from']} (id {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
-    lines.append("People in town: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
+        lines.append(f"Received {t['amount']} coins from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
+    lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
     if view["phase"] == "plan":
         lines.append("Decide how this person splits the free hours of this month: call plan_month. They may also post, comment, message or send coins now.")
     elif view["phase"] == "talk":
@@ -92,7 +95,7 @@ def _fn(name: str, description: str, properties: dict, required: list[str]) -> d
 
 
 def tools(view: dict) -> list[dict]:
-    text = {"type": "string"}
+    text, number = {"type": "string"}, {"type": "integer", "description": "resident number"}
     out = []
     if view["phase"] == "plan":
         props = {"feed_hours": {"type": "integer", "description": "hours for reading the feed this month"},
@@ -103,15 +106,15 @@ def tools(view: dict) -> list[dict]:
         out.append(_fn("plan_month", "Split this month's free hours. The rest goes to rest and everyday matters.", props, ["feed_hours", "people_hours", "study_law"]))
     out += [
         _fn("write_post", "Publish a post in the feed, about anything.", {"text": text, "about_law": {"type": "boolean"}}, ["text", "about_law"]),
-        _fn("comment", "Comment on a post from the feed.", {"post_id": {"type": "integer"}, "text": text}, ["post_id", "text"]),
-        _fn("follow", "Follow a resident: their posts come first in the feed.", {"person_id": {"type": "integer"}}, ["person_id"]),
-        _fn("send_message", "Send a private message to a resident.", {"to_id": {"type": "integer"}, "text": text}, ["to_id", "text"]),
-        _fn("send_coins", "Send own coins to a resident.", {"to_id": {"type": "integer"}, "amount": {"type": "integer"}, "note": text}, ["to_id", "amount", "note"]),
+        _fn("comment", "Comment on a post from the feed.", {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, ["post_id", "text"]),
+        _fn("follow", "Follow a resident: their posts come first in the feed.", {"person_id": number}, ["person_id"]),
+        _fn("send_message", "Send a private message to a resident.", {"to_id": number, "text": text}, ["to_id", "text"]),
+        _fn("send_coins", "Send own coins to a resident.", {"to_id": number, "amount": {"type": "integer"}, "note": text}, ["to_id", "amount", "note"]),
     ]
     if view["phase"] == "decide" and view["me"]["can_vote"]:
         out.append(_fn("vote", "Vote on this month's law.", {"choice": {"type": "string", "enum": ["for", "against", "abstain"]}}, ["choice"]))
     if view["election"] and view["election"]["stage"] == "vote" and view["election"]["candidates"]:
-        out.append(_fn("vote_candidate", "Vote for one council candidate.", {"candidate_id": {"type": "integer"}}, ["candidate_id"]))
+        out.append(_fn("vote_candidate", "Vote for one council candidate.", {"candidate_id": number}, ["candidate_id"]))
     if view["phase"] != "plan":
         out.append(_fn("nothing_now", "Do nothing more now.", {}, []))
     return out

@@ -71,11 +71,14 @@ class ResidentAgent(AgentBase):
         if view.get("over") or view.get("idle"):
             return f"[{self.name}] нет хода"
         tools = resident.tools(view)
-        response = await self.acompletion(
-            [{"role": "system", "content": resident.system_prompt(self._profile, view)},
-             {"role": "user", "content": resident.user_prompt(view)}],
-            stream=False, tools=tools, tool_choice="auto", max_retries=5, max_delay=90.0)
-        actions = resident.parse(getattr(response.choices[0].message, "tool_calls", None))
+        try:
+            response = await self.acompletion(
+                [{"role": "system", "content": resident.system_prompt(self._profile, view)},
+                 {"role": "user", "content": resident.user_prompt(view)}],
+                stream=False, tools=tools, tool_choice="auto", max_retries=2, max_delay=20.0)
+            actions = resident.parse(getattr(response.choices[0].message, "tool_calls", None))
+        except Exception as exc:  # отказ модели не роняет прогон, но остаётся в записи
+            actions = [{"type": "model_error", "note": f"{type(exc).__name__}: {exc}"[:200]}]
         if not actions:
             return f"[{self.name}] ничего не сделал"
         results, answer = await self.ask_env({"variables": {"actions": actions}}, SUBMIT, readonly=False, template_mode=True)
