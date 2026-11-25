@@ -115,6 +115,7 @@ class Config:
     fund_per_head: int = 300
     hours_per_post: int = 10  # сколько часов ленты дают одну показанную запись в волне; допущение
     horizon: int = 12  # на сколько месяцев вперёд считается расчёт последствий
+    bulletin: bool = False  # институт против обмана: город сам показывает расчёт закона каждому жителю, без 4 часов
     population: str = "synthetic"  # synthetic: условные жители; twins: люди из опроса Twin-2K-500
     twins_path: str = ""  # файл, который пишет polity/city/export_twins.py
 
@@ -389,7 +390,8 @@ class City:
             "town": {"residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
                      "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
-            "bill": {"title": bill["title"], "pitch": bill["pitch"], "analysis": bill["analysis"] if i in cur["studied"] else None,
+            "bill": {"title": bill["title"], "pitch": bill["pitch"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
+                     "bulletin": self.cfg.bulletin, "typical_gain": statistics.median(bill["effects"]["total"]) if self.cfg.bulletin else None,
                      "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
             "feed": feed, "headlines": headlines,
@@ -623,6 +625,8 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     if bill["your_gain"]:
         gain = bill["your_gain"]
         value = gain["first_month_cash"] * (1 - p["patience"]) + gain["over_horizon"] * p["patience"]
+    elif bill["typical_gain"] is not None:  # расчёт города разослан всем: житель верит ему, а не словам автора
+        value = bill["typical_gain"]
     else:
         against = sum("против" in q["text"].lower() or "убыт" in q["text"].lower() for q in feed_about)
         value = next(b["promise"] for b in BILLS if b["title"] == bill["title"]) * (1 - min(1.0, against / 2))

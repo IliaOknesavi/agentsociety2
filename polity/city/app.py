@@ -41,7 +41,7 @@ def clean(body: dict) -> dict:
     if form not in world.FORMS:
         raise ValueError("неизвестная форма власти")
     twins = body.get("population") == "twins" and TWINS.is_file()
-    return {"population": "twins" if twins else "synthetic", "twins_path": str(TWINS) if twins else "",
+    return {"population": "twins" if twins else "synthetic", "twins_path": str(TWINS) if twins else "", "bulletin": bool(body.get("bulletin")),
             "form": form, "residents": min(200, max(4, int(body.get("residents", 12)))),
             "months": min(24, max(1, int(body.get("months", 6)))),
             "villain_share": min(0.5, max(0.0, float(body.get("villain_share", 0.15)))),
@@ -50,7 +50,7 @@ def clean(body: dict) -> dict:
 
 def run_id(prefix: str, c: dict) -> str:
     return (f"{prefix}-{c['form']}-n{c['residents']}-m{c['months']}-v{round(c['villain_share'] * 100)}"
-            f"-t{round(c['threshold'] * 100)}-s{c['seed']}" + ("-twins" if c["population"] == "twins" else ""))
+            f"-t{round(c['threshold'] * 100)}-s{c['seed']}" + ("-twins" if c["population"] == "twins" else "") + ("-bulletin" if c["bulletin"] else ""))
 
 
 def start(body: dict) -> list[str]:
@@ -79,7 +79,7 @@ def start(body: dict) -> list[str]:
             JOBS[name] = subprocess.Popen(
                 [str(ROOT / "polity/run_with_subscription.sh"), str(HERE / "run_city.py"), "--form", c["form"],
                  "--residents", str(c["residents"]), "--months", str(c["months"]), "--villains", str(c["villain_share"]),
-                 "--seed", str(c["seed"]), "--threshold", str(c["threshold"]), "--population", c["population"], "--name", name],
+                 "--seed", str(c["seed"]), "--threshold", str(c["threshold"]), "--population", c["population"], "--name", name] + (["--bulletin"] if c["bulletin"] else []),
                 env=dict(os.environ, MODEL=model, PORT=str(port), SHIM_CONCURRENCY="6"), stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
         ids.append(name)
     return ids

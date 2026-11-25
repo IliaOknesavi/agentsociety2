@@ -86,6 +86,7 @@
     </div>
     <label>Порог принятия закона, % голосов «за»</label>
     <input id="threshold" type="number" value="50" min="50" max="90">
+    <label style="display:flex;gap:6px;align-items:center;color:var(--ink);font-size:13px"><input type="checkbox" id="bulletin" style="width:auto"> город рассылает расчёт закона всем жителям</label>
     <label>Откуда жители</label>
     <select id="population"><option value="synthetic">условные: возраст, занятие и характер случайны</option><option value="twins">люди из опроса Twin-2K-500</option></select>
     <label>Кто за них решает</label>
@@ -129,7 +130,7 @@ async function api(path, body) {
 
 function params() {
   return {form:state.form, residents:+$("#residents").value, months:+$("#months").value, villain_share:+$("#villains").value / 100,
-          seed:+$("#seed").value, threshold:+$("#threshold").value / 100, mode:state.mode, model:$("#model").value, population:$("#population").value};
+          seed:+$("#seed").value, threshold:+$("#threshold").value / 100, mode:state.mode, model:$("#model").value, population:$("#population").value, bulletin:$("#bulletin").checked};
 }
 
 async function launch(all, pair) {
@@ -156,7 +157,7 @@ async function refresh() {
     if (!r.config) return `<div class="run"><b>${esc(r.id)}</b><small>${r.failed ? "не запустился: " + esc((r.log || "").slice(-160)) : "каркас поднимается…"}</small><button class="x" data-del="${esc(r.id)}">×</button></div>`;
     const c = r.config, status = r.done ? `<span class="tag good">готов</span>` : r.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`;
     return `<div class="run ${r.id === state.cur ? "on" : ""}" data-id="${esc(r.id)}"><b><input type="checkbox" data-pick="${esc(r.id)}" ${state.picked.has(r.id) ? "checked" : ""}>${esc(r.form_name)}</b>
-      <small>${c.residents} жителей${c.population === "twins" ? " из опроса" : ""}, ${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%, зерно ${c.seed}<br>${esc(r.source)}</small><br>${status}
+      <small>${c.residents} жителей${c.population === "twins" ? " из опроса" : ""}, ${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%, зерно ${c.seed}${c.bulletin ? ", расчёт рассылается всем" : ""}<br>${esc(r.source)}</small><br>${status}
       ${r.done ? `<span class="tag ${r.metrics.harmful_passed ? "bad" : "good"}">убыточных принято ${r.metrics.harmful_passed} из ${r.metrics.harmful_total}</span>` : ""}
       <button class="x" data-del="${esc(r.id)}" title="удалить">×</button></div>`;
   }).join("") || `<div class="muted">Пока нет ни одного.</div>`;
@@ -262,7 +263,7 @@ function drawCompare() {
   const rows = state.runs.filter(r => r.config && state.picked.has(r.id) && r.metrics.laws);
   if (rows.length < 2) return `<div class="empty">Отметьте галочками слева два прогона или больше, либо нажмите «Все четыре формы на этом городе».</div>`;
   const cells = rows.map(r => stats(r.metrics, r.config, true)), names = cells[0].map(s => s[1]);
-  return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит.${r.config.population === "twins" ? " из опроса" : ""}, ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
+  return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит.${r.config.population === "twins" ? " из опроса" : ""}, ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}${r.config.bulletin ? ", расчёт рассылается всем" : ""}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
     ${names.map((n, k) => `<tr><td>${n}</td>${cells.map((c, j) => `<td><b>${c[k][0]}</b></td>`).join("")}</tr>`).join("")}</table></div>
     <div class="note">Сравнение честно только между прогонами одного города: то же число жителей, месяцев, то же зерно и та же доля злодеев. Влияние злодеев видно по паре прогонов, которые отличаются только их долей.</div>`;
 }

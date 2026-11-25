@@ -32,7 +32,9 @@ def system_prompt(p: dict, view: dict) -> str:
         f"{PREDICT}\nThe resident: {describe(p)}.{VILLAIN if p.get('villain') else ''}\n"
         f"The town: {town['residents']} residents. Everyone earns a monthly income, pays part of it into the common fund, "
         f"and the fund pays every resident an equal dividend each month. Each month one law is put to a decision. "
-        f"{FORM[view['form']]} Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does. "
+        f"{FORM[view['form']]} Anyone may spend {COST['study']:g} hours to get the town's calculation of what the law really does"
+        + (" for them personally; the general calculation is sent to every resident. " if view["bill"]["bulletin"] else ". ")
+        +
         "Residents have a feed where anyone can post and comment, private messages, and they can send coins to each other. "
         f"Time is limited: this person has {view['me']['free_hours']} free hours a month after work, sleep and chores. "
         f"A post takes {COST['post']:g} h, a comment or a message {COST['comment']:g} h, a vote {COST['vote']:g} h. "
@@ -64,8 +66,9 @@ def user_prompt(view: dict) -> str:
         lines.append("This person's own recent posts (no need to repeat them): " + " | ".join(view["my_posts"]))
     lines.append(f"This month's law: «{bill['title']}». What its sponsor says: {bill['pitch']}")
     if bill["analysis"]:
-        lines.append(f"The town's calculation (this person spent 4 hours on it): {bill['analysis']} For this person: "
-                     f"{bill['your_gain']['over_horizon']:+.0f} coins over the period, {bill['your_gain']['first_month_cash']:+.0f} in cash in the first month.")
+        lines.append("The town's calculation (" + ("this person spent 4 hours on it" if bill["your_gain"] else "the town sends it to every resident")
+                     + f"): {bill['analysis']}" + (f" For this person: {bill['your_gain']['over_horizon']:+.0f} coins over the period, "
+                                                    f"{bill['your_gain']['first_month_cash']:+.0f} in cash in the first month." if bill["your_gain"] else ""))
     if bill["you_benefit"]:
         lines.append("This person is among those the law pays directly.")
     if view["election"]:
