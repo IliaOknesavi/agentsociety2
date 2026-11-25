@@ -48,12 +48,26 @@ def system_prompt(p: dict, view: dict) -> str:
     )
 
 
+def feed_lines(view: dict) -> list[str]:
+    lines = []
+    if view["feed"]:
+        lines.append("Feed, what this person has time to read:")
+        for q in view["feed"]:
+            role = f", {q['author_role']}" if q["author_role"] else ""
+            lines.append(f"  post #{q['post_id']} by {q['author']} (resident {q['author_id']}{role}): {q['text']}")
+            lines += [f"      comment by {c['author']}: {c['text']}" for c in q["comments"]]
+    if view["headlines"]:
+        lines.append("Other posts, not read: " + "; ".join(f"{h['author']}: «{h['start']}»" for h in view["headlines"]))
+    return lines
+
+
 def race_prompt(view: dict) -> str:
     """Ход жителя в раунде выборов совета: округ, кандидаты, что они обещают и говорили, как голосовали раньше."""
     me, race = view["me"], view["race"]
     stage = {"nominate": "nominations are open", "campaign": "the campaign is on", "debate": "last days of the campaign",
              "vote": "election day", "runoff": "second round between the two leading candidates"}[race["stage"]]
-    lines = [f"Election of the town council before month {view['month']}: {stage}.",
+    lines = [f"Election of the town council before month {view['month']}: {stage}. This round is only about the election: no law is decided until the council is chosen, "
+             "and the town's feed is given over to it.",
              f"The town has {race['districts']} districts, one council seat each, for a term of {race['term']} months. A council member is paid ${race['salary']:,} "
              f"a month from the fund and spends about {race['council_hours']} hours a month on it.",
              f"This person lives in district {race['district']} with: " + ", ".join(f"{q['name']} (resident {q['id']}, {q['job']})" for q in race["neighbours"]) + ".",
@@ -71,6 +85,9 @@ def race_prompt(view: dict) -> str:
         lines.append("Nobody in this district has put themselves forward; the seat will go to a resident drawn by lot.")
     if race["questions"]:
         lines.append("Residents of the district said or asked: " + " | ".join(f"{x['author']}: {x['text']}" for x in race["questions"]))
+    lines += feed_lines(view)
+    for q in view["replies_to_me"]:
+        lines.append(f"Replies to this person's post #{q['post_id']}: " + " | ".join(f"{c['author']}: {c['text']}" for c in q["comments"]))
     for m in view["inbox"]:
         lines.append(f"Private message from {m['from']} (resident {m['from_id']}): {m['text']}")
     for t in view["money_in"]:
@@ -81,8 +98,8 @@ def race_prompt(view: dict) -> str:
         lines.append(f"The second round is between residents {race['runoff'][0]} and {race['runoff'][1]}.")
     lines.append("Call act once. Fill in thought and " + {
         "nominate": "run_for_council: would this person really put themselves forward? Most people do not. If they do, write their programme.",
-        "campaign": "whatever this person does in the campaign: a candidate may address the district, any resident may ask the candidates a question or say what they think of them.",
-        "debate": "whatever this person does now: a candidate may answer what was asked, any resident may reply or ask more.",
+        "campaign": "whatever this person does in the campaign, in the town's feed: a candidate may post what they stand for, any resident may post or comment, ask the candidates questions, say what they think of them.",
+        "debate": "whatever this person does now, in the town's feed: a candidate may answer what was asked, any resident may reply, argue or ask more.",
         "vote": "vote_candidate if this person goes to vote; many residents do not vote in local elections.",
         "runoff": "vote_candidate if this person votes in the second round."}[race["stage"]])
     return "\n".join(lines)
@@ -129,14 +146,7 @@ def user_prompt(view: dict) -> str:
         lines += [f"  {x['author']} (resident {x['author_id']}): {x['text']}" for x in h["messages"]]
         if h["unread"]:
             lines.append(f"  {h['unread']} more hall messages this person has no time to read.")
-    if view["feed"]:
-        lines.append("Feed, what this person has time to read:")
-        for q in view["feed"]:
-            role = f", {q['author_role']}" if q["author_role"] else ""
-            lines.append(f"  post #{q['post_id']} by {q['author']} (resident {q['author_id']}{role}): {q['text']}")
-            lines += [f"      comment by {c['author']}: {c['text']}" for c in q["comments"]]
-    if view["headlines"]:
-        lines.append("Other posts, not read: " + "; ".join(f"{h['author']}: «{h['start']}»" for h in view["headlines"]))
+    lines += feed_lines(view)
     for q in view["replies_to_me"]:
         lines.append(f"Comments under this person's post #{q['post_id']}: " + "; ".join(f"{c['author']}: {c['text']}" for c in q["comments"]))
     for t in view["inbox"]:
@@ -165,13 +175,16 @@ def tools(view: dict) -> list[dict]:
             props["run_for_council"] = {"type": "boolean", "description": "put oneself forward as a candidate in own district"}
             props["program"] = {"type": "string", "description": "only if running: what this person stands for and promises the district, two to four sentences in Russian"}
             required.append("run_for_council")
-        if stage in ("campaign", "debate"):
-            props["campaign_message"] = {"type": "string", "description": "a statement, an answer or a question that the whole district sees, in Russian; omit to stay silent"}
+        if stage != "runoff":
+            props["posts"] = {"type": "array", "description": "posts this person publishes in the town's feed now, in Russian",
+                              "items": {"type": "object", "properties": {"text": text}, "required": ["text"]}}
+            props["comments"] = {"type": "array", "description": "comments on posts from the feed, in Russian",
+                                 "items": {"type": "object", "properties": {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, "required": ["post_id", "text"]}}
         if stage in ("vote", "runoff") and (view["race"]["candidates"] or view["race"]["runoff"]):
             props["vote_candidate"] = {"type": "integer", "description": "resident number of the candidate this person votes for; omit if they do not vote"}
-        props["messages"] = {"type": "array", "description": "private messages to residents; usually none",
+        props["messages"] = {"type": "array", "description": "private messages to residents",
                              "items": {"type": "object", "properties": {"to_id": who, "text": text}, "required": ["to_id", "text"]}}
-        props["payments"] = {"type": "array", "description": "own money sent to residents, in dollars; usually none",
+        props["payments"] = {"type": "array", "description": "own money sent to residents, in dollars",
                              "items": {"type": "object", "properties": {"to_id": who, "amount": {"type": "integer"}, "note": text}, "required": ["to_id", "amount", "note"]}}
         props["remember"] = {"type": "string", "description": "one short line to keep in mind for the coming months; omit if nothing"}
         return [{"type": "function", "function": {"name": "act", "description": "Everything this person thinks and does at this stage of the election, in one call.",
@@ -200,13 +213,13 @@ def tools(view: dict) -> list[dict]:
     if view["hall"]:
         props["hall_message"] = {"type": "string", "description": "something to say in the hall of those who decide; omit to stay silent"}
     props.update({
-        "posts": {"type": "array", "description": "posts this person publishes in the feed now, about anything; usually none",
+        "posts": {"type": "array", "description": "posts this person publishes in the feed now, about anything",
                   "items": {"type": "object", "properties": {"text": text, "about_law": {"type": "boolean"}}, "required": ["text", "about_law"]}},
-        "comments": {"type": "array", "description": "comments on posts from the feed; usually none",
+        "comments": {"type": "array", "description": "comments on posts from the feed",
                      "items": {"type": "object", "properties": {"post_id": {"type": "integer", "description": "the number after # of the post"}, "text": text}, "required": ["post_id", "text"]}},
-        "messages": {"type": "array", "description": "private messages to residents; usually none",
+        "messages": {"type": "array", "description": "private messages to residents",
                      "items": {"type": "object", "properties": {"to_id": who, "text": text}, "required": ["to_id", "text"]}},
-        "payments": {"type": "array", "description": "own money sent to residents, in dollars; usually none",
+        "payments": {"type": "array", "description": "own money sent to residents, in dollars",
                      "items": {"type": "object", "properties": {"to_id": who, "amount": {"type": "integer"}, "note": text}, "required": ["to_id", "amount", "note"]}},
         "follow": {"type": "array", "items": who, "description": "residents to follow: their posts come first in the feed"},
         "remember": {"type": "string", "description": "one short line to keep in mind for the coming months: a promise, a debt, an impression of someone; omit if nothing"},
@@ -233,8 +246,6 @@ def parse(tool_calls) -> list[dict]:
             out.append({"type": "plan", **a["plan"]})
         if a.get("run_for_council"):
             out.append({"type": "nominate", "program": a.get("program", "")})
-        if a.get("campaign_message"):
-            out.append({"type": "campaign", "text": a["campaign_message"]})
         if a.get("opinion"):
             out.append({"type": "opinion", "choice": a["opinion"]})
         if a.get("vote_candidate") is not None:
