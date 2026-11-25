@@ -398,7 +398,7 @@ class City:
             "memory": list(self.notes[i]),
             "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
                             "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
-            "life": random.Random(self.cfg.seed * 100003 + i * 1009 + self.month).choice(LIFE),
+            "life": random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(LIFE),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "inbox": threads,
