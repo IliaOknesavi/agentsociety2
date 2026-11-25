@@ -128,7 +128,7 @@ function home() {
   h += starting.map(r => `<div class="card"><b>${esc(r.id)}</b> ${statusTag(r)} <button class="ghost" data-del="${esc(r.id)}">удалить</button><div class="muted small">${r.queued ? "Прогоны на модели идут по одному; этот начнётся, когда закончится предыдущий." : r.failed ? esc((r.log || "").slice(-300)) : "Каркас AgentSociety 2 поднимается около минуты, затем запись пойдёт по волнам."}</div></div>`).join("");
   for (const runs of Object.values(towns)) {
     const c = runs[0].config;
-    h += `<h3>Город: ${townName(c)}</h3><div class="grid cards">` + runs.map(r => {
+    h += `<h3>Город: ${townName(c)}${runs.filter(r => r.metrics.laws).length > 1 ? ` · <a href="#/compare?ids=${runs.filter(r => r.metrics.laws).map(r => r.id).join(",")}" style="text-transform:none;letter-spacing:0">сравнить прогоны этого города</a>` : ""}</h3><div class="grid cards">` + runs.map(r => {
       const m = r.metrics, k = r.config, progress = r.done ? 1 : ((r.month - 1) * 3 + WAVES.indexOf(r.phase)) / (k.months * 3);
       return `<div class="card runcard" data-open="${esc(r.id)}"><div class="acts"><button class="ghost" title="Создать прогон с теми же настройками" data-copy="${esc(r.id)}">копия</button><button class="ghost" title="Удалить" data-del="${esc(r.id)}">×</button></div>
         <h2>${esc(r.form_name)}</h2><div class="muted small">${k.months} мес., злодеев ${Math.round(k.villain_share * 100)}%${k.threshold > 0.5 ? ", порог " + Math.round(k.threshold * 100) + "%" : ""}${k.bulletin ? ", расчёт рассылается всем" : ""}<br>${esc(r.source)}</div>
