@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Город на рельсах</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e4e0d6; --accent:#b4532a; --accent-soft:#f7e6dc;
+          --good:#1f7a4d; --good-soft:#e2f3ea; --bad:#b3261e; --bad-soft:#fbe4e2; --blue:#2b5fa8; --blue-soft:#e3ecf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding:14px 24px; border-bottom:1px solid var(--line); background:var(--card); display:flex; align-items:baseline; gap:16px; }
+  header h1 { margin:0; font-size:20px; }
+  header span { color:var(--muted); }
+  .layout { display:grid; grid-template-columns:330px 1fr; min-height:calc(100vh - 54px); }
+  aside { border-right:1px solid var(--line); padding:16px; background:#fbfaf7; }
+  main { padding:18px 24px 60px; min-width:0; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:18px 0 8px; }
+  h2:first-child { margin-top:0; }
+  h3 { margin:0 0 6px; font-size:16px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 3px; }
+  input, select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .seg { display:grid; gap:6px; }
+  .seg button, .pill { text-align:left; padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; font:inherit; }
+  .seg button.on, .pill.on { border-color:var(--accent); background:var(--accent-soft); }
+  .seg button small { display:block; color:var(--muted); }
+  .seg.two { grid-template-columns:1fr 1fr; }
+  button.go { width:100%; margin-top:10px; padding:9px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:600 14px inherit; cursor:pointer; }
+  button.go.second { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  .run { border:1px solid var(--line); border-radius:8px; background:#fff; padding:8px 10px; margin-bottom:6px; cursor:pointer; position:relative; }
+  .run.on { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  .run b { display:block; }
+  .run small { color:var(--muted); }
+  .run .x { position:absolute; right:6px; top:4px; border:0; background:none; color:var(--muted); cursor:pointer; font-size:15px; }
+  .run input { width:auto; margin-right:6px; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:12px; background:#eee; color:#444; margin-right:4px; white-space:nowrap; }
+  .tag.good { background:var(--good-soft); color:var(--good); } .tag.bad { background:var(--bad-soft); color:var(--bad); }
+  .tag.blue { background:var(--blue-soft); color:var(--blue); } .tag.acc { background:var(--accent-soft); color:var(--accent); }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px; }
+  .tabs button { padding:8px 14px; border:0; background:none; font:inherit; cursor:pointer; border-bottom:2px solid transparent; color:var(--muted); }
+  .tabs button.on { color:var(--ink); border-color:var(--accent); font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  .pills { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .pill { padding:5px 11px; }
+  .cols { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:14px; align-items:start; }
+  .post { border-top:1px solid var(--line); padding:9px 0; }
+  .post:first-of-type { border-top:0; }
+  .post .who { font-weight:600; }
+  .post .meta, .muted { color:var(--muted); font-size:12px; }
+  .comment { margin:5px 0 0 16px; padding-left:9px; border-left:2px solid var(--line); font-size:13px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:10px; margin-bottom:14px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .stat b { display:block; font-size:22px; }
+  .stat span { color:var(--muted); font-size:12px; }
+  .stat small { display:block; color:var(--muted); margin-top:3px; }
+  .note { background:var(--blue-soft); color:#1d3f73; border-radius:8px; padding:8px 12px; margin-bottom:14px; font-size:13px; }
+  .warn { background:var(--bad-soft); color:var(--bad); }
+  .calc { background:#faf8f3; border-radius:8px; padding:8px 12px; margin-top:8px; font-size:13px; }
+  .empty { color:var(--muted); padding:40px 0; text-align:center; }
+  .bar { height:8px; border-radius:4px; background:#eee; overflow:hidden; display:flex; margin-top:4px; }
+  .bar i { display:block; height:100%; }
+  svg text { font:11px -apple-system, sans-serif; fill:#6b7280; }
+  .toggle { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; margin-left:auto; }
+  .toggle input { width:auto; }
+  @media (max-width: 900px) { .layout { grid-template-columns:1fr; } .cols { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header><h1>Город на рельсах</h1><span>сообщество жителей под тремя формами власти: правила мира одни, меняется только право решать</span></header>
+<div class="layout">
+  <aside>
+    <h2>Новый прогон</h2>
+    <label>Кто решает</label>
+    <div class="seg" id="form"></div>
+    <div class="row">
+      <div><label>Жителей</label><input id="residents" type="number" value="12" min="4" max="200"></div>
+      <div><label>Месяцев</label><input id="months" type="number" value="4" min="1" max="24"></div>
+      <div><label>Злодеев, %</label><input id="villains" type="number" value="15" min="0" max="50"></div>
+      <div><label>Зерно</label><input id="seed" type="number" value="1" min="0"></div>
+    </div>
+    <label>Порог принятия закона, % голосов «за»</label>
+    <input id="threshold" type="number" value="50" min="50" max="90">
+    <label>Жители</label>
+    <div class="seg two" id="mode">
+      <button data-v="rules" class="on">По правилам<small>без модели, сразу</small></button>
+      <button data-v="model">На модели<small>AgentSociety 2</small></button>
+    </div>
+    <div id="modelbox" hidden><label>Модель</label><select id="model"></select><div id="proxywarn" class="note warn" style="margin-top:8px" hidden>В окружении приложения не задан HTTPS_PROXY. Если модель доступна только через локальный прокси, прогон на модели зависнет: запустите приложение с этой переменной.</div></div>
+    <button class="go" id="run">Запустить</button>
+    <button class="go second" id="runall">Все три формы на этом городе</button>
+    <div id="msg" class="muted" style="margin-top:8px"></div>
+    <h2>Прогоны</h2>
+    <div id="runs"></div>
+  </aside>
+  <main>
+    <div class="tabs" id="tabs">
+      <button data-v="month" class="on">Ход месяца</button><button data-v="people">Жители</button>
+      <button data-v="totals">Итоги прогона</button><button data-v="compare">Сравнение форм</button>
+      <label class="toggle"><input type="checkbox" id="reveal"> показывать, кто злодей</label>
+    </div>
+    <div id="view"><div class="empty">Запустите прогон слева или выберите готовый.</div></div>
+  </main>
+</div>
+<script>
+const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const KIND = {impatient:["выгода сейчас, убыток потом","acc"], deceptive:["обещание расходится с расчётом","bad"], investment:["затраты сейчас, выгода потом","blue"], redistribution:["перераспределение","blue"], selfpay:["оплата решающих",""]};
+const WAVE = {plan:"план месяца", talk:"обсуждение", decide:"решение"};
+const state = {form:"direct", mode:"rules", runs:[], forms:{}, cur:null, rec:null, tab:"month", month:1, picked:new Set()};
+const pct = x => x == null ? "нет" : Math.round(x * 100) + "%";
+const num = x => x == null ? "нет" : Math.round(x).toLocaleString("ru-RU");
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : undefined);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "ошибка");
+  return data;
+}
+
+function params() {
+  return {form:state.form, residents:+$("#residents").value, months:+$("#months").value, villain_share:+$("#villains").value / 100,
+          seed:+$("#seed").value, threshold:+$("#threshold").value / 100, mode:state.mode, model:$("#model").value};
+}
+
+async function launch(all) {
+  $("#msg").textContent = state.mode === "model" ? "Запускаю. Каркас поднимается около минуты, затем запись пойдёт по волнам." : "";
+  try {
+    const out = await api("/api/run", {...params(), all_forms:all});
+    await refresh();
+    out.ids.forEach(id => state.picked.add(id));
+    await open(out.ids[0]);
+    if (all) { state.tab = "compare"; draw(); }
+  } catch (e) { $("#msg").textContent = "Не запустилось: " + e.message; }
+}
+
+async function refresh() {
+  const data = await api("/api/runs");
+  state.runs = data.runs; state.forms = data.forms; $("#proxywarn").hidden = data.proxy;
+  if (!$("#form").children.length) {
+    const hint = {direct:"голосуют все жители", council:"совет, выбранный в первый месяц", lottery:"совет по жребию, жребий раз в три месяца"};
+    $("#form").innerHTML = Object.entries(data.forms).map(([k, v]) => `<button data-v="${k}" class="${k === state.form ? "on" : ""}">${esc(v)}<small>${hint[k]}</small></button>`).join("");
+    $("#model").innerHTML = Object.entries(data.models).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  }
+  $("#runs").innerHTML = state.runs.map(r => {
+    if (!r.config) return `<div class="run"><b>${esc(r.id)}</b><small>${r.failed ? "не запустился: " + esc((r.log || "").slice(-160)) : "каркас поднимается…"}</small><button class="x" data-del="${esc(r.id)}">×</button></div>`;
+    const c = r.config, status = r.done ? `<span class="tag good">готов</span>` : r.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`;
+    return `<div class="run ${r.id === state.cur ? "on" : ""}" data-id="${esc(r.id)}"><b><input type="checkbox" data-pick="${esc(r.id)}" ${state.picked.has(r.id) ? "checked" : ""}>${esc(r.form_name)}</b>
+      <small>${c.residents} жителей, ${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%, зерно ${c.seed}<br>${esc(r.source)}</small><br>${status}
+      ${r.done ? `<span class="tag ${r.metrics.harmful_passed ? "bad" : "good"}">убыточных принято ${r.metrics.harmful_passed} из ${r.metrics.harmful_total}</span>` : ""}
+      <button class="x" data-del="${esc(r.id)}" title="удалить">×</button></div>`;
+  }).join("") || `<div class="muted">Пока нет ни одного.</div>`;
+}
+
+async function open(id) {
+  state.cur = id;
+  try { state.rec = await api("/api/run?id=" + encodeURIComponent(id)); } catch (e) { state.rec = null; }
+  if (state.rec) state.month = Math.min(state.month, months().length) || 1;
+  await refresh(); draw();
+}
+
+const months = () => state.rec ? [...state.rec.months, ...(state.rec.current ? [state.rec.current] : [])] : [];
+const person = i => state.rec.people[i];
+function who(i, m) {
+  const p = person(i), deciding = m && state.rec.config.form !== "direct" && m.deciders.includes(i);
+  return `${esc(p.name)}${deciding ? ` <span class="tag blue">решает</span>` : ""}${$("#reveal").checked && p.villain ? ` <span class="tag bad">злодей</span>` : ""}`;
+}
+
+function drawMonth() {
+  const all = months(), m = all[state.month - 1];
+  if (!m) return `<div class="empty">Запись ещё не началась.</div>`;
+  const b = m.bill, rec = state.rec, open = m.passed === undefined, kind = KIND[b.kind];
+  const posts = rec.posts.filter(q => q.month === m.month), tr = rec.transfers.filter(t => t.month === m.month), ms = rec.messages.filter(t => t.month === m.month);
+  const votes = Object.entries(m.votes), entitled = m.deciders.length;
+  const hours = Object.values(m.hours), avg = k => hours.length ? (hours.reduce((s, h) => s + h[k], 0) / hours.length).toFixed(1) : "0";
+  let html = `<div class="pills">${all.map((x, k) => `<button class="pill ${k + 1 === state.month ? "on" : ""}" data-month="${k + 1}">Месяц ${x.month}${x.passed === undefined ? " (идёт)" : ""}</button>`).join("")}</div>`;
+  html += `<div class="card"><div class="muted">Закон месяца <span class="tag ${kind[1]}">${kind[0]}</span>${b.contested ? `<span class="tag">спорный: расчётом не решается</span>` : b.harmful ? `<span class="tag bad">убыточен для большинства</span>` : `<span class="tag good">выгоден большинству</span>`}</div>
+    <h3>${esc(b.title)}</h3><div><b>Что говорит автор.</b> ${esc(b.pitch)}</div>
+    <div class="calc"><b>Расчёт города, 4 часа жителя.</b> ${esc(b.analysis)}<div class="muted">Заказали расчёт: ${m.studied.length ? m.studied.map(i => who(i, m)).join(", ") : "никто"}</div></div>
+    <div style="margin-top:10px">${open ? `<span class="tag acc">решение ещё не принято</span>` : m.passed ? `<span class="tag good">принят</span>` : `<span class="tag bad">отклонён</span>`}
+      ${open ? "" : `за ${m.tally.for}, против ${m.tally.against}, право решать у ${m.tally.entitled}`}
+      ${rec.config.form !== "direct" ? `<div class="muted" style="margin-top:4px">Решают: ${m.deciders.length ? m.deciders.map(i => who(i)).join(", ") : "совет ещё не выбран"}</div>` : ""}
+      ${votes.length ? `<div class="muted" style="margin-top:4px">Голоса: ${votes.map(([i, v]) => who(+i) + " " + ({for:"за", against:"против", abstain:"воздержался"}[v])).join("; ")}</div>` : ""}
+      ${m.election ? `<div class="muted" style="margin-top:4px">Выборы совета: кандидаты ${m.election.candidates.map(i => who(i) + " (" + (m.election.count[i] || 0) + ")").join(", ") || "не нашлись"}; избраны ${m.election.elected.map(i => esc(person(i).name)).join(", ")}</div>` : ""}</div></div>`;
+  html += `<div class="cols"><div class="card"><h3>Лента месяца</h3><div class="muted">${posts.length} записей, из них о законе ${posts.filter(q => q.about_bill).length}</div>`;
+  html += posts.map(q => `<div class="post"><span class="who">${who(q.author, m)}</span> <span class="meta">${esc(person(q.author).job_ru)} · ${WAVE[["plan","talk","decide"][q.phase]]} · прочли ${q.views}${q.about_bill ? " · о законе" : ""}</span>
+      <div>${esc(q.text)}</div>${q.comments.map(c => `<div class="comment"><b>${esc(person(c.author).name)}:</b> ${esc(c.text)}</div>`).join("")}</div>`).join("") || `<div class="empty">В этом месяце никто ничего не написал.</div>`;
+  html += `</div><div><div class="card"><h3>На что ушло время</h3><table><tr><th>В среднем на жителя, часов</th><th class="n"></th></tr>
+      <tr><td>лента</td><td class="n">${avg("feed")}</td></tr><tr><td>семья и друзья</td><td class="n">${avg("people")}</td></tr>
+      <tr><td>разбор закона</td><td class="n">${avg("study")}</td></tr><tr><td>записи, комментарии, письма, голос</td><td class="n">${avg("public")}</td></tr></table>
+      <div class="muted" style="margin-top:6px">План месяца составили ${hours.length} из ${rec.people.length}.</div></div>
+    <div class="card"><h3>Деньги между жителями</h3>${tr.map(t => `<div class="post">${who(t.from, m)} → ${who(t.to, m)}: <b>${t.amount}</b> монет${t.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted">${esc(t.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`}</div>
+    <div class="card"><h3>Личные сообщения</h3>${ms.map(t => `<div class="post">${who(t.from, m)} → ${who(t.to, m)}<div>${esc(t.text)}</div></div>`).join("") || `<div class="muted">Никто никому не писал.</div>`}</div>
+    ${m.economy ? `<div class="card"><h3>Деньги города после месяца</h3>Фонд ${num(m.economy.fund)} монет, взнос ${pct(m.economy.tax)}, дивиденд каждому ${m.economy.dividend}</div>` : ""}</div></div>`;
+  return html;
+}
+
+function drawPeople() {
+  const rec = state.rec, reveal = $("#reveal").checked;
+  return `<div class="card"><table><tr><th>Житель</th><th>Занятие</th><th>Характер</th><th class="n">Доход</th><th class="n">Деньги в начале</th><th class="n">Деньги сейчас</th><th class="n">Свободных часов</th><th class="n">Месяцев решал</th><th class="n">Записей</th><th class="n">Его прочли</th><th class="n">Подписчиков</th></tr>
+    ${rec.people.map(p => `<tr><td><b>${esc(p.name)}</b>, ${p.age}${reveal && p.villain ? ` <span class="tag bad">злодей</span>` : ""}${p.owner ? ` <span class="tag">владелец</span>` : ""}</td><td>${esc(p.job_ru)}</td><td>${esc(p.temper_ru)}</td>
+      <td class="n">${p.wage}</td><td class="n">${num(p.start_savings)}</td><td class="n">${num(p.money)}</td><td class="n">${p.free}</td><td class="n">${p.decided_months}</td><td class="n">${p.posts}</td><td class="n">${p.views}</td><td class="n">${p.followers}</td></tr>`).join("")}</table></div>
+    <div class="note">Жители условные: возраст, занятие и характер розданы случайно по зерну. Злодеи тоже розданы случайно, их место в городе не задаётся.</div>`;
+}
+
+function chart(series, labels) {
+  const all = series.flatMap(s => s.values), lo = Math.min(...all), hi = Math.max(...all), w = 560, h = 170, n = series[0].values.length;
+  const x = k => 40 + k * (w - 60) / Math.max(1, n - 1), y = v => h - 24 - (v - lo) / Math.max(1, hi - lo) * (h - 44);
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px"><line x1="40" y1="${h - 24}" x2="${w - 20}" y2="${h - 24}" stroke="#e4e0d6"/>
+    <text x="4" y="${y(hi) + 4}">${num(hi)}</text><text x="4" y="${y(lo) + 4}">${num(lo)}</text>
+    ${labels.map((l, k) => `<text x="${x(k) - 4}" y="${h - 8}">${l}</text>`).join("")}
+    ${series.map(s => `<polyline fill="none" stroke="${s.color}" stroke-width="2" points="${s.values.map((v, k) => x(k) + "," + y(v)).join(" ")}"/>${s.values.map((v, k) => `<circle cx="${x(k)}" cy="${y(v)}" r="3" fill="${s.color}"/>`).join("")}
+      <text x="${w - 150}" y="${14 + series.indexOf(s) * 14}" style="fill:${s.color}">${s.name}</text>`).join("")}</svg>`;
+}
+
+function stats(m, cfg) {
+  const council = cfg.form !== "direct";
+  return [
+    [`${m.harmful_passed} из ${m.harmful_total}`, "убыточных законов принято", "закон убыточен, если по расчёту города типичный житель теряет; спорные законы о перераспределении в счёт не идут"],
+    [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", ""],
+    [num(m.wealth), "достаток типичного жителя через год", `без единого закона ${num(m.wealth_no_laws)}, при принятии только выгодных ${num(m.wealth_best)}`],
+    [pct(m.turnout), "явка тех, у кого право решать", ""],
+    [pct(m.studied_deciders), "решающих заказали расчёт закона", `среди всех жителей ${pct(m.studied_all)}`],
+    [`${m.political_posts} из ${m.posts}`, "записей о законе", `комментариев ${m.comments}, просмотров ${m.views}`],
+    [pct(m.views_top_author_share), "просмотров у самого читаемого автора", ""],
+    council ? [pct(m.views_deciders_share), "просмотров у записей решающих", `их доля среди записей ${pct(m.posts_deciders_share)}`] : null,
+    [`${m.hours_feed} / ${m.hours_people} / ${m.hours_study}`, "часов в месяц: лента / близкие / разбор закона", `на записи, письма и голос ${m.hours_public}`],
+    [`${m.transfers}`, "переводов между жителями", `на ${num(m.transfers_sum)} монет; тем, кто решает: ${council ? m.transfers_to_deciders : "решают все"}`],
+    [`${m.villains_deciding} из ${m.villains}`, "злодеев с правом решать", `переводов от злодеев ${m.transfers_by_villains}; личных сообщений всего ${m.messages}`],
+  ].filter(Boolean);
+}
+
+function drawTotals() {
+  const rec = state.rec, m = rec.metrics, done = rec.months;
+  if (!done.length) return `<div class="empty">Первый месяц ещё не закончился.</div>`;
+  const median = xs => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  return `${rec.done ? "" : `<div class="note">Прогон ещё идёт: итоги по ${done.length} месяцам из ${rec.config.months}.</div>`}
+    <div class="grid">${stats(m, rec.config).map(s => `<div class="stat"><b>${s[0]}</b><span>${s[1]}</span><small>${s[2]}</small></div>`).join("")}</div>
+    <div class="cols"><div class="card"><h3>Фонд города по месяцам</h3>${chart([{name:"фонд", color:"#b4532a", values:done.map(x => x.economy.fund)}], done.map(x => x.month))}</div>
+    <div class="card"><h3>Деньги типичного жителя по месяцам</h3>${chart([{name:"медиана денег на руках", color:"#2b5fa8", values:done.map(x => median(x.economy.savings))}], done.map(x => x.month))}</div></div>
+    <div class="card"><h3>Законы прогона</h3><table><tr><th>Месяц</th><th>Закон</th><th>Вид</th><th class="n">Типичному жителю за год</th><th class="n">Заказали расчёт</th><th class="n">За / против</th><th>Итог</th></tr>
+    ${done.map(x => `<tr><td>${x.month}</td><td>${esc(x.bill.title)}</td><td><span class="tag ${KIND[x.bill.kind][1]}">${KIND[x.bill.kind][0]}</span></td>
+      <td class="n">${num(median(x.bill.effects.total))}</td><td class="n">${x.studied.length}</td><td class="n">${x.tally.for} / ${x.tally.against}</td>
+      <td>${x.passed ? `<span class="tag ${x.bill.contested ? "" : x.bill.harmful ? "bad" : "good"}">принят</span>` : `<span class="tag ${x.bill.contested ? "" : x.bill.harmful ? "good" : "bad"}">отклонён</span>`}</td></tr>`).join("")}</table></div>
+    <div class="note">Источник жителей: ${esc(rec.source)}. ${rec.source.includes("правил") ? "Жители по правилам нужны для проверки мира и экрана, выводов о формах власти по ним не делается." : ""}</div>`;
+}
+
+function drawCompare() {
+  const rows = state.runs.filter(r => r.config && state.picked.has(r.id) && r.metrics.laws);
+  if (rows.length < 2) return `<div class="empty">Отметьте галочками слева два прогона или больше, либо нажмите «Все три формы на этом городе».</div>`;
+  const names = stats(rows[0].metrics, {form:"council"}).map(s => s[1]);
+  const cells = rows.map(r => stats(r.metrics, {form:"council"}));
+  return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит., ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
+    ${names.map((n, k) => `<tr><td>${n}</td>${cells.map((c, j) => `<td><b>${rows[j].config.form === "direct" && /решающих$/.test(n) && k === 7 ? "решают все" : c[k][0]}</b></td>`).join("")}</tr>`).join("")}</table></div>
+    <div class="note">Сравнение честно только между прогонами одного города: то же число жителей, месяцев, то же зерно и та же доля злодеев. Влияние злодеев видно по паре прогонов, которые отличаются только их долей.</div>`;
+}
+
+function draw() {
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === state.tab));
+  if (state.tab === "compare") { $("#view").innerHTML = drawCompare(); return; }
+  if (!state.rec) { $("#view").innerHTML = `<div class="empty">Запустите прогон слева или выберите готовый.</div>`; return; }
+  $("#view").innerHTML = state.tab === "month" ? drawMonth() : state.tab === "people" ? drawPeople() : drawTotals();
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("button, .run, input[type=checkbox]"); if (!t) return;
+  if (t.dataset.del) { e.stopPropagation(); await api("/api/delete", {id:t.dataset.del}); state.picked.delete(t.dataset.del); if (state.cur === t.dataset.del) { state.cur = null; state.rec = null; } await refresh(); draw(); return; }
+  if (t.dataset.pick) { e.stopPropagation(); t.checked ? state.picked.add(t.dataset.pick) : state.picked.delete(t.dataset.pick); draw(); return; }
+  if (t.parentElement.id === "form") { state.form = t.dataset.v; [...t.parentElement.children].forEach(b => b.classList.toggle("on", b === t)); }
+  else if (t.parentElement.id === "mode") { state.mode = t.dataset.v; [...t.parentElement.children].forEach(b => b.classList.toggle("on", b === t)); $("#modelbox").hidden = state.mode !== "model"; }
+  else if (t.parentElement.id === "tabs") { state.tab = t.dataset.v; draw(); }
+  else if (t.dataset.month) { state.month = +t.dataset.month; draw(); }
+  else if (t.id === "run") launch(false);
+  else if (t.id === "runall") launch(true);
+  else if (t.classList.contains("run") && t.dataset.id) { state.month = 1; open(t.dataset.id); }
+});
+$("#reveal").addEventListener("change", draw);
+setInterval(async () => {  // пока какой-то прогон идёт, список и открытая запись обновляются сами
+  if (!state.runs.some(r => r.running || r.starting)) return;
+  await refresh();
+  if (state.cur && state.runs.some(r => r.id === state.cur && r.running)) { state.rec = await api("/api/run?id=" + encodeURIComponent(state.cur)).catch(() => state.rec); draw(); }
+}, 3000);
+refresh().then(() => { const first = state.runs.find(r => r.config); if (first) open(first.id); });
+</script>
+</body>
+</html>
