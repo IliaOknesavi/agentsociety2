@@ -111,6 +111,13 @@ const signed = x => x == null ? "нет" : (x > 0 ? "+" : x < 0 ? "−" : "") + 
 const council = f => f === "council" || f === "lottery";
 const median = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 const kTok = x => x >= 1e6 ? (x / 1e6).toFixed(2).replace(".", ",") + " млн" : x >= 1000 ? Math.round(x / 1000) + " тыс." : String(Math.round(x || 0));
+const usd = () => S.rec?.config.currency === "$";
+const U = () => usd() ? "$" : "монет";  // в записях до перевода города на доллары деньги шли в монетах
+function verdict(b) {  // пометка закона: в новых записях только по двум счётам, вердикта «выгоден» нет
+  if (b.both_bad === undefined) return b.contested ? ["спорный", ""] : b.harmful ? ["убыточен для большинства", "bad"] : ["выгоден большинству", "good"];
+  return b.both_bad ? ["плох по обоим счётам: и на руки, и для фонда", "bad"] : b.both_good ? ["хорош по обоим счётам", "good"] : ["спорный: на руки и для фонда по-разному", ""];
+}
+const vtag = b => { const v = verdict(b); return `<span class="tag ${v[1]}">${v[0]}</span>`; };
 const dur = s => s >= 90 ? Math.round(s / 60) + " мин" : Math.round(s) + " с";
 
 async function api(path, body) {
@@ -149,7 +156,7 @@ function home() {
       return `<div class="card runcard" data-open="${esc(r.id)}"><div class="acts"><button class="ghost" title="Создать прогон с теми же настройками" data-copy="${esc(r.id)}">копия</button><button class="ghost" title="Удалить" data-del="${esc(r.id)}">×</button></div>
         <h2>${esc(r.form_name)}</h2><div class="muted small">${k.months} мес., злодеев ${Math.round(k.villain_share * 100)}%${k.threshold > 0.5 ? ", порог " + Math.round(k.threshold * 100) + "%" : ""}${k.bulletin ? ", расчёт рассылается всем" : ""}${k.hall === false ? ", без зала" : ""}<br>${esc(r.source)}</div>
         <div class="bar"><i style="width:${progress * 100}%;background:${r.done ? "var(--good)" : "var(--accent)"}"></i></div>${statusTag(r)}
-        ${m.laws ? `<div style="margin-top:8px"><span class="tag ${m.harmful_passed ? "bad" : "good"}">убыточных принято ${m.harmful_passed} из ${m.harmful_total}</span><span class="tag">типичному жителю ${signed(m.gain)}</span>${m.majority_match != null ? `<span class="tag">с большинством совпало ${pct(m.majority_match)}</span>` : ""}</div>` : ""}</div>`;
+        ${m.laws ? `<div style="margin-top:8px"><span class="tag ${m.harmful_passed ? "bad" : "good"}">${m.gain_fund !== undefined ? "плохих по обоим счётам" : "убыточных"} принято ${m.harmful_passed} из ${m.harmful_total}</span><span class="tag">типичному на руки ${signed(m.gain)}${m.gain_fund !== undefined ? " $" : ""}</span>${m.majority_match != null ? `<span class="tag">с большинством совпало ${pct(m.majority_match)}</span>` : ""}</div>` : ""}</div>`;
     }).join("") + `</div>`;
   }
   if (!S.runs.length) h += `<div class="empty">Пока нет ни одного прогона. <a href="#/new">Создать первый</a></div>`;
@@ -286,11 +293,11 @@ function monthPanel(m) {
   const body = tab === "feed" ? (posts.map(q => `<div class="post"><b>${who(q.author, m)}</b> <span class="muted small">${WAVE[WAVES[q.phase]]} · прочли ${q.views}${q.about_bill ? " · о законе" : ""}</span><div>${esc(q.text)}</div>${q.comments.map(c => `<div class="comment"><b>${esc(P(c.author).name)}:</b> ${esc(c.text)}</div>`).join("")}</div>`).join("") || `<div class="muted">В этом месяце никто ничего не написал.</div>`)
     : tab === "hall" ? (`<div class="muted small">Зал тех, кто решает: пишут и читают только жители с правом голоса, сейчас их ${m.deciders.length}. Остальные жители зала не видят.</div>` + (hallList(m) || `<div class="muted" style="margin-top:8px">В этом месяце в зале никто не выступал.</div>`))
     : tab === "mail" ? (ms.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)} <span class="muted small">${WAVE[WAVES[x.phase]]}</span><div>${esc(x.text)}</div></div>`).join("") || `<div class="muted">Никто никому не писал.</div>`)
-    : tab === "money" ? (tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> монет${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`)
+    : tab === "money" ? (tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> ${U()}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`)
     : tab === "acts" ? (WAVES.map(w => { const xs = acts.filter(x => x.phase === w); return xs.length ? `<div class="post"><b>Волна «${WAVE[w]}»</b>${xs.map(x => `<div class="small">${who(x.i, m)}: ${x.refused ? `<span style="color:var(--bad)">среда отказала: ${esc(x.refused)}</span>` : esc(act(x.a))}</div>`).join("")}</div>` : ""; }).join("") || `<div class="muted">Журнал действий есть только в прогонах новой записи.</div>`)
     : (thoughts.map(c => `<div class="post">${who(c.i, m)} <span class="muted small">${WAVE[c.phase]}</span><div>${esc(c.thought)}</div></div>`).join("") || `<div class="muted">Мысли записываются только у жителей на модели, в прогонах новой записи.</div>`);
   if (tab === "feed" && posts.length) tabs.push(["open", "Лента на весь экран"]);
-  return `<div class="card"><div class="muted small">Месяц ${m.month} <span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${b.contested ? `<span class="tag">спорный</span>` : b.harmful ? `<span class="tag bad">убыточен для большинства</span>` : `<span class="tag good">выгоден большинству</span>`}</div>
+  return `<div class="card"><div class="muted small">Месяц ${m.month} <span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${vtag(b)}</div>
       <h2 style="margin-top:4px">${esc(b.title)}</h2><div class="small">${esc(b.pitch)}</div>
       <div style="margin-top:8px">${open ? `<span class="tag acc">решение ещё не принято</span>` : m.passed ? `<span class="tag good">принят</span>` : `<span class="tag bad">отклонён</span>`} ${open ? "" : `голоса: за ${m.tally.for}, против ${m.tally.against}`}</div>
       ${ot ? `<div class="small" style="margin-top:6px">Мнение всех жителей: за ${ot.for}, против ${ot.against}, без мнения ${ot.none}
@@ -304,7 +311,7 @@ function monthsScene() {
   if (!all.length) return runHead("months") + `<div class="empty">Запись ещё не началась.</div>`;
   const sel = Math.min(S.pinLaw ?? all.length, all.length);
   const laws = all.map(x => { const open = x.passed === undefined; return `<div class="law ${x.month === sel ? "on" : ""}" data-law="${x.month}"><div class="m">месяц ${x.month}${open ? " · идёт" : ` · за ${x.tally.for}, против ${x.tally.against}`}${x.matches_majority === false ? " · против большинства" : ""}</div><div class="t">${esc(x.bill.title)}</div>
-      <span class="tag ${x.bill.contested ? "" : x.bill.harmful ? "bad" : "good"}">${x.bill.contested ? "спорный" : x.bill.harmful ? "убыточен" : "выгоден"}</span>${open ? "" : `<span class="tag ${x.passed ? (x.bill.harmful && !x.bill.contested ? "bad" : "good") : ""}">${x.passed ? "принят" : "отклонён"}</span>`}</div>`; }).join("");
+      <span class="tag ${verdict(x.bill)[1]}">${verdict(x.bill)[0].split(":")[0].replace(" для большинства", "").replace(" большинству", "")}</span>${open ? "" : `<span class="tag ${x.passed ? (x.bill.harmful && !x.bill.contested ? "bad" : "good") : ""}">${x.passed ? "принят" : "отклонён"}</span>`}</div>`; }).join("");
   return runHead("months") + `<div class="stage"><div><h3 style="margin-top:0">Законы прогона</h3>${laws}</div>
     <div class="card" id="circlebox">${circle(all[(S.hoverLaw ?? sel) - 1])}</div><div id="monthbox">${monthPanel(all[sel - 1])}</div></div>`;
 }
@@ -330,7 +337,7 @@ function pairThread(a, b) {  // письма и переводы двух жит
 function chatView(me, other) {  // переписка как чат: реплики первого жителя справа, переводы между ними в той же ленте
   let last = "";
   return pairThread(me, other).map(x => { const stamp = `месяц ${x.month} · ${WAVE[WAVES[x.phase]]}`, head = stamp !== last ? `<div class="stamp">${stamp}</div>` : ""; last = stamp;
-    return head + (x.kind === "pay" ? `<div class="pay">${esc(P(x.from).name)} перевёл ${esc(P(x.to).name)} <b>${x.amount}</b> монет${x.note ? `: «${esc(x.note)}»` : ""}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}</div>`
+    return head + (x.kind === "pay" ? `<div class="pay">${esc(P(x.from).name)} перевёл ${esc(P(x.to).name)} <b>${x.amount}</b> ${U()}${x.note ? `: «${esc(x.note)}»` : ""}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}</div>`
       : `<div class="bubble ${x.from === me ? "mine" : ""}"><div class="small muted">${esc(P(x.from).name)}</div>${esc(x.text)}</div>`); }).join("") || `<div class="muted">Писем и переводов между ними не было.</div>`;
 }
 function partnersOf(i) {
@@ -393,16 +400,16 @@ function lawScene(k) {
   const m = months()[k - 1]; if (!m) return runHead("months") + `<div class="empty">Такого месяца в прогоне нет.</div>`;
   const r = S.rec, b = m.bill, open = m.passed === undefined, ot = m.opinion_tally, n = r.people.length;
   const rows = r.people.map(p => { const s = lawState(m, p.id), th = (p.calls || []).filter(c => c.month === m.month && c.thought).pop();
-    return `<tr class="click" data-go="#/run/${S.recId}/person/${p.id}"><td>${who(p.id, m, true)}</td><td>${esc(p.job_ru)}</td><td class="n">${signed(b.effects.total[p.id])}</td><td>${m.studied.includes(p.id) ? "да" : ""}</td>
+    return `<tr class="click" data-go="#/run/${S.recId}/person/${p.id}"><td>${who(p.id, m, true)}</td><td>${esc(p.job_ru)}</td><td class="n">${signed(b.effects.cash ? b.effects.cash[p.id] : b.effects.total[p.id])}</td><td>${m.studied.includes(p.id) ? "да" : ""}</td>
       <td>${s.opinion ? `<span class="tag" style="background:${COLOR[s.opinion]};color:#fff">${CHOICE[s.opinion]}</span>` : `<span class="muted">не спрошен</span>`}</td>
       <td>${s.vote ? `<span class="tag" style="background:${COLOR[s.vote]};color:#fff">${CHOICE[s.vote]}</span>${s.opinion && s.opinion !== "none" && s.vote !== "abstain" && s.opinion !== s.vote ? ` <span class="tag bad">против своего мнения</span>` : ""}` : s.via != null ? `через ${esc(P(s.via).name)}` : m.deciders.includes(p.id) ? `<span class="muted">не голосовал</span>` : `<span class="muted">нет права</span>`}</td>
       <td class="small">${th ? esc(th.thought) : ""}</td></tr>`; }).join("");
   const posts = r.posts.filter(q => q.month === m.month && q.about_bill), ms = r.messages.filter(x => x.month === m.month), tr = r.transfers.filter(x => x.month === m.month);
   return `<div class="crumbs"><a href="#/">Прогоны</a> / <a href="#/run/${S.recId}/months">${esc(r.form_name)}</a> / закон месяца ${m.month}</div>
     <div style="display:flex;gap:8px;align-items:center">${backBtn(`#/run/${S.recId}/months`)}<span style="flex:1"></span>${k > 1 ? `<a class="btn" href="#/run/${S.recId}/law/${k - 1}">← закон месяца ${k - 1}</a>` : ""}${k < months().length ? `<a class="btn" href="#/run/${S.recId}/law/${k + 1}">закон месяца ${k + 1} →</a>` : ""}</div>
-    <h1 style="margin-top:10px">${esc(b.title)}</h1><div><span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${b.contested ? `<span class="tag">спорный: расчётом не решается</span>` : b.harmful ? `<span class="tag bad">убыточен для большинства</span>` : `<span class="tag good">выгоден большинству</span>`}
+    <h1 style="margin-top:10px">${esc(b.title)}</h1><div><span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${vtag(b)}
       ${open ? `<span class="tag acc">решение ещё не принято</span>` : m.passed ? `<span class="tag good">принят</span>` : `<span class="tag bad">отклонён</span>`}</div>
-    <div class="grid g2" style="margin-top:14px;align-items:start"><div class="card"><h2>Что говорит автор</h2>${esc(b.pitch)}<div class="calc"><b>Расчёт города.</b> ${esc(b.analysis)}</div>
+    <div class="grid g2" style="margin-top:14px;align-items:start"><div class="card"><h2>Что говорит автор</h2>${esc(b.pitch)}${b.terms ? `<div style="margin-top:8px"><b>Что записано в законе.</b> ${esc(b.terms)}</div>` : ""}<div class="calc"><b>Расчёт города.</b> ${esc(b.analysis)}</div>
       <div class="muted small" style="margin-top:8px">Расчёт стоит жителю 4 часа${r.config.bulletin ? "; в этом прогоне общий расчёт рассылается всем" : ""}. Заказали: ${m.studied.length ? m.studied.map(i => who(i, m)).join(", ") : "никто"}.</div></div>
     <div class="card"><h2>Решение и мнение города</h2>
       <table><tr><th></th><th class="n">за</th><th class="n">против</th><th class="n">остальные</th></tr>
@@ -413,10 +420,10 @@ function lawScene(k) {
       ${m.election ? `<div class="muted small" style="margin-top:6px">Выборы совета в этом месяце: ${m.election.candidates.map(i => esc(P(i).name) + " (" + (m.election.count[i] || 0) + ")").join(", ") || "кандидатов не было"}; избраны ${m.election.elected.map(i => esc(P(i).name)).join(", ")}.</div>` : ""}
       ${Object.keys(m.delegated || {}).length ? `<div class="muted small" style="margin-top:6px">Голоса через доверенных: ${Object.entries(m.delegated).map(([i, j]) => esc(P(+i).name) + " → " + esc(P(j).name)).join("; ")}</div>` : ""}</div></div>
     ${r.hall ? `<div class="card"><h2>Зал тех, кто решает · ${r.hall.filter(x => x.month === m.month).length}</h2><div class="muted small">Общий канал жителей с правом голоса, остальные его не видят. Читать можно столько реплик, на сколько житель отвёл часов в плане месяца.</div>${hallList(m) || `<div class="muted" style="margin-top:8px">В этом месяце в зале никто не выступал.${m.election ? " Совет избран в конце волны обсуждения и сразу голосовал." : ""}</div>`}</div>` : ""}
-    <div class="card"><h2>Каждый житель</h2><table><tr><th>Житель</th><th>Занятие</th><th class="n">Ему за год по расчёту</th><th>Заказал расчёт</th><th>Мнение</th><th>Голос</th><th>Мысль перед решением</th></tr>${rows}</table></div>
+    <div class="card"><h2>Каждый житель</h2><table><tr><th>Житель</th><th>Занятие</th><th class="n">${b.effects.cash ? "Ему на руки за год" : "Ему за год по расчёту"}</th><th>Заказал расчёт</th><th>Мнение</th><th>Голос</th><th>Мысль перед решением</th></tr>${rows}</table></div>
     <div class="grid g2" style="align-items:start"><div class="card"><h2>Записи о законе · ${posts.length}</h2>${posts.map(q => `<div class="post"><b>${who(q.author, m)}</b> <span class="muted small">${WAVE[WAVES[q.phase]]} · прочли ${q.views}</span><div>${esc(q.text)}</div>${q.comments.map(c => `<div class="comment"><b>${esc(P(c.author).name)}:</b> ${esc(c.text)}</div>`).join("")}</div>`).join("") || `<div class="muted">О законе никто не писал.</div>`}</div>
     <div><div class="card"><h2>Письма месяца · ${ms.length}</h2>${ms.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}<div>${esc(x.text)}</div></div>`).join("") || `<div class="muted">Никто никому не писал.</div>`}</div>
-      <div class="card"><h2>Переводы месяца · ${tr.length}</h2>${tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> монет${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`}</div></div></div>`;
+      <div class="card"><h2>Переводы месяца · ${tr.length}</h2>${tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> ${U()}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`}</div></div></div>`;
 }
 
 /* ---------- сцена: карточка жителя ---------- */
@@ -447,10 +454,10 @@ function personScene(i) {
         <td class="n">${tin.length ? "+" + sum(tin) : ""}</td><td class="n">${tout.length ? "−" + sum(tout) : ""}</td><td class="n">${h.feed ?? ""}</td><td class="n">${h.people ?? ""}</td><td class="n">${h.study || ""}</td><td class="n">${h.public || ""}</td>
         <td>${s.opinion ? CHOICE[s.opinion] : ""}</td><td>${voteText(m, s)}</td></tr>`; }).join("");
     body = `<div class="grid g4">
-        <div class="card stat"><b>${num(p.money)}</b><span>монет сейчас</span><small>в начале ${num(p.start_savings)}, доход ${p.wage} в месяц</small></div>
+        <div class="card stat"><b>${num(p.money)}</b><span>${U()} сейчас</span><small>в начале ${num(p.start_savings)}, доход ${num(p.wage)} в месяц</small></div>
         <div class="card stat"><b>${posts.length} / ${comments.length}</b><span>записей и комментариев</span><small>его записи прочли ${p.views} раз</small></div>
         <div class="card stat"><b>${partners.length}</b><span>собеседников в личных письмах</span><small>писем отправил ${r.messages.filter(x => x.from === i).length}, получил ${r.messages.filter(x => x.to === i).length}</small></div>
-        <div class="card stat"><b>${signed(sum(tr.filter(x => x.to === i)) - sum(tr.filter(x => x.from === i)))}</b><span>монет от переводов</span><small>получил ${tr.filter(x => x.to === i).length}, отправил ${tr.filter(x => x.from === i).length}</small></div></div>
+        <div class="card stat"><b>${signed(sum(tr.filter(x => x.to === i)) - sum(tr.filter(x => x.from === i)))}</b><span>${U()} от переводов</span><small>получил ${tr.filter(x => x.to === i).length}, отправил ${tr.filter(x => x.from === i).length}</small></div></div>
       <div class="grid g2" style="align-items:start"><div class="card"><h2>Деньги по месяцам</h2>${money.length > 1 ? line([{color:"#2b5fa8", values:money}], ["старт", ...done.map(m => m.month)]) : `<div class="muted">Первый месяц ещё не закончился.</div>`}</div>
       <div><div class="card"><h2>Связи</h2><div class="small muted">Подписан на</div>${(p.follows || []).map(chip).join("") || `<span class="muted small">ни на кого</span>`}
           <div class="small muted" style="margin-top:8px">На него подписаны</div>${followers.map(q => chip(q.id)).join("") || `<span class="muted small">никто</span>`}
@@ -494,9 +501,15 @@ function peopleScene() {
 function stats(m, cfg, full) {  // full: все строки, чтобы таблица сравнения не съезжала между формами
   const byCouncil = council(cfg.form), liquid = cfg.form === "liquid";
   return [
-    [`${m.harmful_passed} из ${m.harmful_total}`, "убыточных законов принято", "закон убыточен, если по расчёту города типичный житель теряет; спорные законы в счёт не идут"],
-    [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", ""],
-    [signed(m.gain), "монет типичному жителю от принятых законов", `через год, в сравнении с тем же городом без единого закона; только выгодные законы дали бы ${signed(m.gain_best)}`],
+    ...(m.gain_fund !== undefined ? [
+      [`${m.passed} из ${m.laws}`, "законов принято", ""],
+      [`${m.harmful_passed} из ${m.harmful_total}`, "принято законов, плохих по обоим счётам", "закон плох по обоим счётам, если типичный житель теряет и деньги на руках, и долю фонда; остальные законы спорные и в счёт не идут"],
+      [signed(m.gain) + " $", "типичному жителю на руки за год от принятых законов", `в сравнении с тем же городом без единого закона; его доля фонда изменилась на ${signed(m.gain_fund)} $`],
+    ] : [
+      [`${m.harmful_passed} из ${m.harmful_total}`, "убыточных законов принято", "прежняя мерка: деньги на руках плюс доля фонда; спорные законы в счёт не идут"],
+      [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", "прежняя мерка"],
+      [signed(m.gain), "монет типичному жителю от принятых законов", `прежняя мерка: деньги на руках плюс доля фонда через год`],
+    ]),
     [pct(m.majority_match), "решений совпало с мнением большинства жителей", m.majority_match == null ? "мнение всех жителей в этом прогоне не записывалось" : `мнение высказали в среднем ${pct(m.opinions_given)} жителей; голосов против собственного мнения: ${m.votes_against_opinion}`],
     [pct(m.turnout), "явка тех, у кого право решать", ""],
     [pct(m.studied_deciders), "решающих заказали расчёт закона", `среди всех жителей ${pct(m.studied_all)}`],
@@ -518,9 +531,9 @@ function totalsScene() {
     <div class="grid g4">${stats(m, r.config).map(s => `<div class="card stat"><b>${s[0]}</b><span>${s[1]}</span><small>${s[2]}</small></div>`).join("")}</div>
     <div class="grid g2"><div class="card"><h2>Фонд города по месяцам</h2>${line([{color:"#b4532a", values:done.map(x => x.economy.fund)}], done.map(x => x.month))}</div>
     <div class="card"><h2>Деньги типичного жителя по месяцам</h2>${line([{color:"#2b5fa8", values:done.map(x => median(x.economy.savings))}], done.map(x => x.month))}</div></div>
-    <div class="card"><h2>Законы прогона</h2><table><tr><th>Месяц</th><th>Закон</th><th>Вид</th><th class="n">Типичному жителю за год</th><th class="n">Заказали расчёт</th><th class="n">Голоса: за / против</th><th class="n">Мнение всех: за / против</th><th>Итог</th><th>С большинством</th></tr>
-    ${done.map(x => `<tr class="click" data-go="#/run/${S.recId}/law/${x.month}"><td>${x.month}</td><td>${esc(x.bill.title)}</td><td><span class="tag ${KIND[x.bill.kind][1]}">${KIND[x.bill.kind][0]}</span></td><td class="n">${signed(median(x.bill.effects.total))}</td><td class="n">${x.studied.length}</td><td class="n">${x.tally.for} / ${x.tally.against}</td>
-      <td class="n">${x.opinion_tally ? x.opinion_tally.for + " / " + x.opinion_tally.against : ""}</td><td>${x.passed ? `<span class="tag ${x.bill.contested ? "" : x.bill.harmful ? "bad" : "good"}">принят</span>` : `<span class="tag ${x.bill.contested ? "" : x.bill.harmful ? "good" : "bad"}">отклонён</span>`}</td>
+    <div class="card"><h2>Законы прогона</h2><table><tr><th>Месяц</th><th>Закон</th><th>Вид</th><th class="n">Типичному за год: на руки / доля фонда</th><th class="n">Заказали расчёт</th><th class="n">Голоса: за / против</th><th class="n">Мнение всех: за / против</th><th>Итог</th><th>С большинством</th></tr>
+    ${done.map(x => `<tr class="click" data-go="#/run/${S.recId}/law/${x.month}"><td>${x.month}</td><td>${esc(x.bill.title)}</td><td><span class="tag ${KIND[x.bill.kind][1]}">${KIND[x.bill.kind][0]}</span></td><td class="n">${x.bill.effects.cash ? signed(median(x.bill.effects.cash)) + " / " + signed(x.bill.effects.fund_share) : signed(median(x.bill.effects.total))}</td><td class="n">${x.studied.length}</td><td class="n">${x.tally.for} / ${x.tally.against}</td>
+      <td class="n">${x.opinion_tally ? x.opinion_tally.for + " / " + x.opinion_tally.against : ""}</td><td>${x.passed ? `<span class="tag ${x.bill.both_bad || (x.bill.both_bad === undefined && x.bill.harmful && !x.bill.contested) ? "bad" : ""}">принят</span>` : `<span class="tag">отклонён</span>`}</td>
       <td>${x.matches_majority == null ? "" : x.matches_majority ? "да" : `<span class="tag bad">нет</span>`}</td></tr>`).join("")}</table></div>`;
 }
 const costCells = (b, total) => `<td class="n">${num(b.calls)}</td><td class="n">${num(b.prompt_tokens)}</td><td class="n">${num(b.cached_tokens)}</td><td class="n">${num(b.completion_tokens)}</td><td class="n">${dur(b.seconds)}</td><td class="n">${b.cost_usd ? "$" + b.cost_usd.toFixed(2) : ""}</td><td class="n">${total && total.prompt_tokens ? pct(b.prompt_tokens / total.prompt_tokens) : ""}</td>`;
