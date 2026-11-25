@@ -40,13 +40,6 @@ NAMES = ("Анна Борис Вера Глеб Дарья Егор Зоя Ив�
          "Фёдор Элина Юрий Яна Артём Белла Виктор Галина Денис Ева Захар Инна Кирилл Лидия Марк Нина Олег Полина "
          "Роман София Тимур Алла Вадим Алиса Георгий Дина Эмиль Жанна Игорь Клара Леонид Мила Наум Оксана Пётр Раиса "
          "Семён Таисия Фаина Ефим Юлия Яков").split()
-LIFE = [  # будничные события месяца: у жителя есть о чём писать и помимо закона
-    "the roof at home started leaking", "their child started school this month", "a fair is coming to the market square on Saturday",
-    "the bus line they use was cancelled", "they are selling an old bicycle", "the garden finally recovered after the rains",
-    "a neighbour's dog keeps barking at night", "they caught a bad cold and stayed home for a week", "an old friend came to visit",
-    "prices at the market went up again", "their team won the town football game", "the workshop asked them to work two extra shifts",
-    "they are looking for someone to fix the stove", "a relative is getting married next month",
-]
 POST0 = 100  # номера записей в ленте начинаются со 100, чтобы их нельзя было спутать с номерами жителей
 # Жители из опроса Twin-2K-500. Занятость: по-английски, по-русски, свободные часы, своё ли дело (тогда владеет мастерской)
 WORK = {"Full-time employment": ("works full time", "полная занятость", 150, False),
@@ -455,13 +448,6 @@ class City:
         self.cur["deciders"], self.cur["election"] = list(self.deciders), {"elected": self.deciders, "candidates": sorted(race["candidates"]), "count": {}}
         self.race = None
 
-    def _life(self, i: int) -> str:
-        """Событие жизни жителя в этом месяце: смены только у работающих по найму, школа только у тех, кто моложе 50."""
-        p = self.people[i]
-        fits = [x for x in LIFE if ("shifts" not in x or (p["free"] == 150 and not p["owner"]))
-                and ("child started school" not in x or str(p["age"])[:2] in ("18", "30") or (isinstance(p["age"], int) and p["age"] < 50))]
-        return random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(fits)
-
     def _race_view(self, i: int) -> dict:
         """Что житель видит в раунде выборов: свой округ, кандидатов с программами, что они говорили и как голосовали раньше."""
         p, race, d = self.people[i], self.race, self.district[i]
@@ -482,7 +468,7 @@ class City:
                      "questions": [{"author": self.people[x["author"]]["name"], "text": x["text"]} for x in race["statements"] if self.district[x["author"]] == d and x["author"] not in race["candidates"]][-6:]},
             "inbox": [{"from_id": m["from"], "from": self.people[m["from"]]["name"], "text": m["text"]} for m in self.messages if m["to"] == i and m["month"] == self.month][-4:],
             "money_in": [{"from_id": t["from"], "from": self.people[t["from"]]["name"], "amount": t["amount"], "note": t["note"]} for t in self.transfers if t["to"] == i and t["month"] == self.month],
-            "memory": list(self.notes[i]), "life": self._life(i),
+            "memory": list(self.notes[i]),
         }
 
     def _race_act(self, i: int, a: dict) -> str | None:
@@ -586,7 +572,6 @@ class City:
             "memory": list(self.notes[i]),
             "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
                             "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
-            "life": self._life(i),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "inbox": threads,

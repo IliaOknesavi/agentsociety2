@@ -43,7 +43,7 @@ def system_prompt(p: dict, view: dict) -> str:
         "Residents have a feed where anyone can post and comment, private messages, and they can send money to each other. All money in town is in dollars. "
         f"Time is limited: this person has {view['me']['free_hours']} free hours a month after work, sleep and chores. "
         f"A post takes {COST['post']:g} h, a comment or a message {COST['comment']:g} h, a vote {COST['vote']:g} h. "
-        "Most of life is not politics: family, friends, rest and everyday matters take most of the free time, and people post about them too.\n"
+        "Most of life is not politics: family, friends, rest and everyday matters take most of the free time. One part of the month is about ten days: a message or a comment is read by the other person in the next part, not the same day.\n"
         "The town's public life is in Russian: write posts, comments and messages in Russian, the way this person would write."
     )
 
@@ -57,7 +57,7 @@ def race_prompt(view: dict) -> str:
              f"The town has {race['districts']} districts, one council seat each, for a term of {race['term']} months. A council member is paid ${race['salary']:,} "
              f"a month from the fund and spends about {race['council_hours']} hours a month on it.",
              f"This person lives in district {race['district']} with: " + ", ".join(f"{q['name']} (resident {q['id']}, {q['job']})" for q in race["neighbours"]) + ".",
-             f"Money: ${me['money']:,}, income ${me['income']:,} a month. In this person's own life now: {view['life']}."]
+             f"Money: ${me['money']:,}, income ${me['income']:,} a month."]
     if view["memory"]:
         lines.append("What this person noted for themselves earlier: " + " | ".join(view["memory"]))
     if race["candidates"]:
@@ -109,7 +109,6 @@ def user_prompt(view: dict) -> str:
         lines.append(f"Last month the law «{last['law']}» was {'passed' if last['passed'] else 'rejected'}: {last['tally']['for']} for, {last['tally']['against']} against.")
     if view["memory"]:
         lines.append("What this person noted for themselves earlier: " + " | ".join(view["memory"]))
-    lines.append(f"In this person's own life this month: {view['life']}.")
     if view["my_posts"]:
         lines.append("This person's own recent posts (no need to repeat them): " + " | ".join(view["my_posts"]))
     lines.append(f"This month's law: «{bill['title']}». What its sponsor says: {bill['pitch']} What the law itself states: {bill['terms']}")
