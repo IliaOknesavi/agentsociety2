@@ -375,7 +375,7 @@ function electionsScene() {
           <div class="bar"><i style="width:${total ? c.votes / total * 100 : 0}%;background:${c.id === d.winner ? "var(--good)" : "#b9b3a6"}"></i></div>
           <div class="small">${esc(c.program) || `<span class="muted">программы нет</span>`}</div></div>`).join("") || `<div class="muted" style="margin-top:8px">Никто не выдвинулся.</div>`}
       ${d.by_lot ? `<div style="margin-top:8px"><span class="tag acc">место по жребию</span> ${who(d.winner)}</div>` : ""}
-      ${said.length ? `<details><summary>Кампания и дебаты в округе · ${said.length}</summary>${said.map(x => `<div class="comment"><b>${esc(P(x.author).name)}</b> <span class="muted small">${WAVE[x.stage]}${x.candidate ? " · кандидат" : ""}</span><div>${esc(x.text)}</div></div>`).join("")}</details>` : ""}</div>`; }).join("") + `</div>`).join("");
+      ${said.length ? `<details open><summary>Кампания и дебаты в округе · ${said.length}</summary>${said.map(x => `<div class="comment"><b>${esc(P(x.author).name)}</b> <span class="muted small">${WAVE[x.stage]}${x.candidate ? " · кандидат" : ""}</span><div>${esc(x.text)}</div></div>`).join("")}</details>` : ""}</div>`; }).join("") + `</div>`).join("");
   return runHead("elections") + `<div class="note">Город разделён на округа, от каждого один член совета на ${r.config.council_term} месяцев. Раунд выборов: выдвижение с программой, кампания, дебаты, голосование; если ни у кого в округе нет больше половины голосов, двое первых идут во второй тур. Член совета получает ${num(r.config.salary)} $ в месяц из фонда и тратит на совет ${r.config.council_hours} часов.</div>` + live + (done || (race ? "" : `<div class="empty">Выборов в этом запуске не было.</div>`));
 }
 

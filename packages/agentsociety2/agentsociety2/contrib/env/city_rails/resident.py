@@ -81,8 +81,8 @@ def race_prompt(view: dict) -> str:
         lines.append(f"The second round is between residents {race['runoff'][0]} and {race['runoff'][1]}.")
     lines.append("Call act once. Fill in thought and " + {
         "nominate": "run_for_council: would this person really put themselves forward? Most people do not. If they do, write their programme.",
-        "campaign": "whatever this person does in the campaign. Candidates usually speak; most other residents stay silent, a few ask a question.",
-        "debate": "whatever this person does now. Candidates usually answer what they were asked; most other residents stay silent.",
+        "campaign": "whatever this person does in the campaign: a candidate may address the district, any resident may ask the candidates a question or say what they think of them.",
+        "debate": "whatever this person does now: a candidate may answer what was asked, any resident may reply or ask more.",
         "vote": "vote_candidate if this person goes to vote; many residents do not vote in local elections.",
         "runoff": "vote_candidate if this person votes in the second round."}[race["stage"]])
     return "\n".join(lines)
@@ -147,7 +147,7 @@ def user_prompt(view: dict) -> str:
     lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
     lines.append("Call act once. Fill in thought"
                  + {"plan": ", the plan for this month's free hours", "talk": "", "decide": " and opinion" + (" and vote" if me["can_vote"] else "")}[view["phase"]]
-                 + ", and add whatever this person does now. Most people most of the time post, comment and write nothing: leave those lists empty unless this person really would.")
+                 + ", and add whatever this person does now: posts, comments, private messages, payments. Leave a list empty when this person would do nothing of that kind.")
     return "\n".join(lines)
 
 
