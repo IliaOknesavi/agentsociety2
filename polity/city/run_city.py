@@ -27,7 +27,7 @@ RUNS = Path(__file__).resolve().parent / "runs"
 
 async def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--form", default="direct", choices=["direct", "council", "lottery"])
+    ap.add_argument("--form", default="direct", choices=["direct", "liquid", "council", "lottery"])
     ap.add_argument("--residents", type=int, default=12)
     ap.add_argument("--months", type=int, default=4)
     ap.add_argument("--villains", type=float, default=0.15, help="доля злодеев")

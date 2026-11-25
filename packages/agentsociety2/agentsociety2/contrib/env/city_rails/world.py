@@ -18,7 +18,8 @@ import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-FORMS = {"direct": "Прямое голосование", "council": "Выборный совет", "lottery": "Совет по жребию"}
+FORMS = {"direct": "Прямое голосование", "liquid": "Прямое с делегированием", "council": "Выборный совет", "lottery": "Совет по жребию"}
+EVERYONE = ("direct", "liquid")  # формы, где право решать у всех жителей
 PHASES = ("plan", "talk", "decide")
 COST = {"post": 0.5, "comment": 0.25, "message": 0.25, "study": 4.0, "vote": 0.5}  # часы на одно занятие
 
@@ -238,7 +239,9 @@ class City:
         other = rng.sample([b for b in BILLS if b["kind"] in ("investment", "redistribution")], 5)
         self.agenda = [b for pair in (zip(bad, other) if rng.random() < 0.5 else zip(other, bad)) for b in pair]
         self.month, self.phase, self.done = 1, 0, False
-        self.deciders: list[int] = list(range(n)) if c.form == "direct" else []
+        self.everyone = c.form in EVERYONE
+        self.deciders: list[int] = list(range(n)) if self.everyone else []
+        self.delegate: dict[int, int] = {}  # отзывное делегирование: кому житель передал свой голос
         self.election: dict | None = {"candidates": [], "votes": {}} if c.form == "council" else None
         self.posts: list[dict] = []
         self.transfers: list[dict] = []
@@ -305,8 +308,17 @@ class City:
             self.phase += 1
             return
         cur, bill = self.cur, self.cur["bill"]
-        yes = sum(v == "for" for v in cur["votes"].values())
-        no = sum(v == "against" for v in cur["votes"].values())
+        cur["delegated"] = {}
+        for i in (self.delegate if self.cfg.form == "liquid" else []):  # кто не голосовал сам, голосует как его доверенный
+            seen, j = {i}, self.delegate[i]
+            while j not in cur["votes"] and j in self.delegate and j not in seen:  # цепочка доверенных без кругов
+                seen.add(j)
+                j = self.delegate[j]
+            if i not in cur["votes"] and j in cur["votes"] and j != i:
+                cur["delegated"][i] = j
+        cast = list(cur["votes"].values()) + [cur["votes"][j] for j in cur["delegated"].values()]
+        yes = sum(v == "for" for v in cast)
+        no = sum(v == "against" for v in cast)
         cur["passed"] = yes + no > 0 and yes / (yes + no) > self.cfg.threshold
         cur["tally"] = {"for": yes, "against": no, "entitled": len(self.deciders)}
         if cur["passed"]:
@@ -335,7 +347,10 @@ class City:
 
     # ---------- что видит житель ----------
     def role(self, i: int) -> str:
-        if self.cfg.form == "direct":
+        if self.cfg.form == "liquid":
+            held = sum(d == i for d in self.delegate.values())
+            return f"держит голосов: {held}" if held else ""
+        if self.everyone:
             return ""
         if i in self.deciders:
             return "член совета" if self.cfg.form == "council" else "член совета по жребию"
@@ -372,13 +387,15 @@ class City:
                    "free_hours": p["free"], "hours_left": round(p["free"] - self.spent[i], 2),
                    "role": self.role(i), "can_vote": i in self.deciders and self.election is None},
             "town": {"residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
-                     "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if self.cfg.form != "direct" else "all residents"},
+                     "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
             "bill": {"title": bill["title"], "pitch": bill["pitch"], "analysis": bill["analysis"] if i in cur["studied"] else None,
                      "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
             "feed": feed, "headlines": headlines,
             "memory": list(self.notes[i]),
+            "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
+                            "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
             "life": random.Random(self.cfg.seed * 100003 + i * 1009 + self.month).choice(LIFE),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
@@ -450,6 +467,16 @@ class City:
                 self._event(i, "candidate")
             return None
         cur["hours"].setdefault(i, {"feed": 0, "people": 0, "study": 0, "public": 0.0})
+        if kind == "delegate":  # передать голос доверенному или забрать назад: номер меньше нуля или свой
+            to = int(a["to_id"])
+            if self.cfg.form != "liquid" or to >= n:
+                return "делегирования в этом городе нет или нет такого жителя"
+            if to < 0 or to == i:
+                self.delegate.pop(i, None)
+            else:
+                self.delegate[i] = to
+            self._event(i, "delegate", to=None if to < 0 or to == i else to)
+            return None
         if kind == "remember":
             self.notes[i] = (self.notes[i] + [f"month {self.month}: {str(a['text']).strip()[:200]}"])[-4:]
             return None
@@ -484,7 +511,7 @@ class City:
             self.eco.savings[i] -= amount
             self.eco.savings[to] += amount
             self.transfers.append({"from": i, "to": to, "amount": amount, "note": str(a.get("note", ""))[:200],
-                                   "month": self.month, "phase": self.phase, "to_decider": to in self.deciders and self.cfg.form != "direct"})
+                                   "month": self.month, "phase": self.phase, "to_decider": to in self.deciders and not self.everyone})
         elif kind == "vote":
             if self.phase != 2 or i not in self.deciders or self.election is not None:
                 return "сейчас голосовать нельзя"
@@ -531,7 +558,7 @@ class City:
         for q in self.posts:
             views[q["author"]] = views.get(q["author"], 0) + q["views"]
         total_views = sum(views.values())
-        ever = {d for m in months for d in m["deciders"]} if self.cfg.form != "direct" else set()
+        ever = {d for m in months for d in m["deciders"]} if not self.everyone else set()
         entitled_studied = [len([i for i in m["studied"] if i in m["deciders"]]) / max(1, len(m["deciders"])) for m in months]
         hours = [h for m in months for h in m["hours"].values()]
         villains = [p["id"] for p in self.people if p["villain"]]
@@ -552,8 +579,10 @@ class City:
             "transfers": len(self.transfers), "transfers_sum": sum(t["amount"] for t in self.transfers),
             "transfers_to_deciders": sum(t["to_decider"] for t in self.transfers),
             "messages": len(self.messages), "villains": len(villains),
+            "delegated_share": (mean([len(m["delegated"]) / max(1, len(m["delegated"]) + len(m["votes"])) for m in months]) if self.cfg.form == "liquid" else None),
+            "delegated_max": (max((max([list(m["delegated"].values()).count(j) for j in set(m["delegated"].values())] or [0]) for m in months), default=0) if self.cfg.form == "liquid" else None),
             "model_errors": sum(e["kind"] == "model_error" for m in months for e in m["events"]),
-            "villains_deciding": len([v for v in villains if v in ever]) if self.cfg.form != "direct" else len(villains),
+            "villains_deciding": len([v for v in villains if v in ever]) if not self.everyone else len(villains),
             "transfers_by_villains": sum(t["from"] in villains for t in self.transfers),
         }
         people = [dict(p, money=round(self.eco.savings[p["id"]]), views=views.get(p["id"], 0),
@@ -579,7 +608,7 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     """Житель по простым правилам, без модели. Нужен, чтобы проверять мир и показывать экран; выводов по нему не делается."""
     phase, bill, me = view["phase"], view["bill"], view["me"]
     actions: list[dict] = []
-    decider = me["can_vote"] and view["form"] != "direct"
+    decider = me["can_vote"] and view["form"] not in EVERYONE
     if phase == "plan":
         study = rng.random() < p["interest"] * (2.0 if decider else 0.7)
         actions.append({"type": "plan", "feed_hours": round(me["free_hours"] * (0.05 + 0.2 * p["social"])),
@@ -620,6 +649,8 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
                 actions.append({"type": "message", "to_id": q["id"], "text": "Поддержите закон, это всем на пользу. Благодарность отправил."})
         if view["election"] and view["election"]["candidates"]:
             actions.append({"type": "vote_candidate", "candidate_id": rng.choice(view["election"]["candidates"])["id"]})
+    if view["delegation"] and phase == "talk" and not bill["your_gain"] and view["feed"] and rng.random() < 0.5 - 0.4 * p["interest"]:
+        actions.append({"type": "delegate", "to_id": view["feed"][0]["author_id"]})  # кому некогда разбираться, доверяет тому, кого читает
     if phase == "decide" and me["can_vote"] and rng.random() < (0.95 if decider else 0.3 + 0.6 * p["interest"]):
         actions.append({"type": "vote", "choice": stance})
     return actions
@@ -648,6 +679,7 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         r = run_scripted({"form": form, "residents": 20, "months": 6, "seed": 3})
         assert all(describe(p) for p in r["people"])
         m = r["metrics"]
-        assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form == "direct" else 5) for x in r["months"]), form
+        assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form in EVERYONE else 5) for x in r["months"]), form
+        assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
         print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному жителю {m['gain']:+} "
               f"(только выгодные дали бы {m['gain_best']:+}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")

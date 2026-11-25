@@ -72,7 +72,7 @@
 </style>
 </head>
 <body>
-<header><h1>Город на рельсах</h1><span>сообщество жителей под тремя формами власти: правила мира одни, меняется только право решать</span></header>
+<header><h1>Город на рельсах</h1><span>сообщество жителей под разными формами власти: правила мира одни, меняется только право решать</span></header>
 <div class="layout">
   <aside>
     <h2>Новый прогон</h2>
@@ -95,7 +95,7 @@
     </div>
     <div id="modelbox" hidden><label>Модель</label><select id="model"></select><div id="proxywarn" class="note warn" style="margin-top:8px" hidden>В окружении приложения не задан HTTPS_PROXY. Если модель доступна только через локальный прокси, прогон на модели зависнет: запустите приложение с этой переменной.</div></div>
     <button class="go" id="run">Запустить</button>
-    <button class="go second" id="runall">Все три формы на этом городе</button>
+    <button class="go second" id="runall">Все четыре формы на этом городе</button>
     <button class="go second" id="runpair">Пара: этот город со злодеями и без</button>
     <div id="msg" class="muted" style="margin-top:8px"></div>
     <h2>Прогоны</h2>
@@ -114,6 +114,7 @@
 const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const KIND = {impatient:["выгода сейчас, убыток потом","acc"], deceptive:["обещание расходится с расчётом","bad"], investment:["затраты сейчас, выгода потом","blue"], redistribution:["перераспределение","blue"], selfpay:["оплата решающих",""]};
 const WAVE = {plan:"план месяца", talk:"обсуждение", decide:"решение"};
+const council = f => f === "council" || f === "lottery";
 const state = {form:"direct", mode:"rules", runs:[], forms:{}, cur:null, rec:null, tab:"month", month:1, picked:new Set()};
 const pct = x => x == null ? "нет" : Math.round(x * 100) + "%";
 const num = x => x == null ? "нет" : Math.round(x).toLocaleString("ru-RU");
@@ -147,7 +148,7 @@ async function refresh() {
   const data = await api("/api/runs");
   state.runs = data.runs; state.forms = data.forms; $("#proxywarn").hidden = data.proxy; $("#population").options[1].disabled = !data.twins;
   if (!$("#form").children.length) {
-    const hint = {direct:"голосуют все жители", council:"совет, выбранный в первый месяц", lottery:"совет по жребию, жребий раз в три месяца"};
+    const hint = {direct:"голосуют все жители", liquid:"голосуют все; голос можно передать доверенному и забрать назад", council:"совет, выбранный в первый месяц", lottery:"совет по жребию, жребий раз в три месяца"};
     $("#form").innerHTML = Object.entries(data.forms).map(([k, v]) => `<button data-v="${k}" class="${k === state.form ? "on" : ""}">${esc(v)}<small>${hint[k]}</small></button>`).join("");
     $("#model").innerHTML = Object.entries(data.models).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
   }
@@ -171,7 +172,7 @@ async function open(id) {
 const months = () => state.rec ? [...state.rec.months, ...(state.rec.current ? [state.rec.current] : [])] : [];
 const person = i => state.rec.people[i];
 function who(i, m) {
-  const p = person(i), deciding = m && state.rec.config.form !== "direct" && m.deciders.includes(i);
+  const p = person(i), deciding = m && council(state.rec.config.form) && m.deciders.includes(i);
   return `${esc(p.name)}${deciding ? ` <span class="tag blue">решает</span>` : ""}${$("#reveal").checked && p.villain ? ` <span class="tag bad">злодей</span>` : ""}`;
 }
 
@@ -188,7 +189,8 @@ function drawMonth() {
     <div class="calc"><b>Расчёт города, 4 часа жителя.</b> ${esc(b.analysis)}<div class="muted">Заказали расчёт: ${m.studied.length ? m.studied.map(i => who(i, m)).join(", ") : "никто"}</div></div>
     <div style="margin-top:10px">${open ? `<span class="tag acc">решение ещё не принято</span>` : m.passed ? `<span class="tag good">принят</span>` : `<span class="tag bad">отклонён</span>`}
       ${open ? "" : `за ${m.tally.for}, против ${m.tally.against}, право решать у ${m.tally.entitled}`}
-      ${rec.config.form !== "direct" ? `<div class="muted" style="margin-top:4px">Решают: ${m.deciders.length ? m.deciders.map(i => who(i)).join(", ") : "совет ещё не выбран"}</div>` : ""}
+      ${council(rec.config.form) ? `<div class="muted" style="margin-top:4px">Решают: ${m.deciders.length ? m.deciders.map(i => who(i)).join(", ") : "совет ещё не выбран"}</div>` : ""}
+      ${m.delegated && Object.keys(m.delegated).length ? `<div class="muted" style="margin-top:4px">Голоса по доверию: ${Object.entries(m.delegated).map(([i, j]) => esc(person(+i).name) + " → " + esc(person(j).name)).join("; ")}</div>` : ""}
       ${votes.length ? `<div class="muted" style="margin-top:4px">Голоса: ${votes.map(([i, v]) => who(+i) + " " + ({for:"за", against:"против", abstain:"воздержался"}[v])).join("; ")}</div>` : ""}
       ${m.election ? `<div class="muted" style="margin-top:4px">Выборы совета: кандидаты ${m.election.candidates.map(i => who(i) + " (" + (m.election.count[i] || 0) + ")").join(", ") || "не нашлись"}; избраны ${m.election.elected.map(i => esc(person(i).name)).join(", ")}</div>` : ""}</div></div>`;
   html += `<div class="cols"><div class="card"><h3>Лента месяца</h3><div class="muted">${posts.length} записей, из них о законе ${posts.filter(q => q.about_bill).length}</div>`;
@@ -222,8 +224,8 @@ function chart(series, labels) {
       <text x="${w - 150}" y="${14 + series.indexOf(s) * 14}" style="fill:${s.color}">${s.name}</text>`).join("")}</svg>`;
 }
 
-function stats(m, cfg) {
-  const council = cfg.form !== "direct";
+function stats(m, cfg, full) {  // full: все строки, чтобы таблица сравнения не съезжала между формами
+  const byCouncil = council(cfg.form), liquid = cfg.form === "liquid";
   return [
     [`${m.harmful_passed} из ${m.harmful_total}`, "убыточных законов принято", "закон убыточен, если по расчёту города типичный житель теряет; спорные законы о перераспределении в счёт не идут"],
     [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", ""],
@@ -232,9 +234,10 @@ function stats(m, cfg) {
     [pct(m.studied_deciders), "решающих заказали расчёт закона", `среди всех жителей ${pct(m.studied_all)}`],
     [`${m.political_posts} из ${m.posts}`, "записей о законе", `комментариев ${m.comments}, просмотров ${m.views}`],
     [pct(m.views_top_author_share), "просмотров у самого читаемого автора", ""],
-    council ? [pct(m.views_deciders_share), "просмотров у записей решающих", `их доля среди записей ${pct(m.posts_deciders_share)}`] : null,
+    byCouncil || full ? [byCouncil ? pct(m.views_deciders_share) : "решают все", "просмотров у записей решающих", byCouncil ? `их доля среди записей ${pct(m.posts_deciders_share)}` : ""] : null,
     [`${m.hours_feed} / ${m.hours_people} / ${m.hours_study}`, "часов в месяц: лента / близкие / разбор закона", `на записи, письма и голос ${m.hours_public}`],
-    [`${m.transfers}`, "переводов между жителями", `на ${num(m.transfers_sum)} монет; тем, кто решает: ${council ? m.transfers_to_deciders : "решают все"}`],
+    [`${m.transfers}`, "переводов между жителями", `на ${num(m.transfers_sum)} монет; тем, кто решает: ${byCouncil ? m.transfers_to_deciders : "решают все"}`],
+    liquid || full ? [liquid ? pct(m.delegated_share) : "нет", "голосов отдано через доверенных", liquid ? `больше всего чужих голосов у одного жителя: ${m.delegated_max}` : ""] : null,
     [`${m.villains_deciding} из ${m.villains}`, "злодеев с правом решать", `переводов от злодеев ${m.transfers_by_villains}; личных сообщений всего ${m.messages}`],
   ].filter(Boolean);
 }
@@ -257,11 +260,10 @@ function drawTotals() {
 
 function drawCompare() {
   const rows = state.runs.filter(r => r.config && state.picked.has(r.id) && r.metrics.laws);
-  if (rows.length < 2) return `<div class="empty">Отметьте галочками слева два прогона или больше, либо нажмите «Все три формы на этом городе».</div>`;
-  const names = stats(rows[0].metrics, {form:"council"}).map(s => s[1]);
-  const cells = rows.map(r => stats(r.metrics, {form:"council"}));
+  if (rows.length < 2) return `<div class="empty">Отметьте галочками слева два прогона или больше, либо нажмите «Все четыре формы на этом городе».</div>`;
+  const cells = rows.map(r => stats(r.metrics, r.config, true)), names = cells[0].map(s => s[1]);
   return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит.${r.config.population === "twins" ? " из опроса" : ""}, ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
-    ${names.map((n, k) => `<tr><td>${n}</td>${cells.map((c, j) => `<td><b>${rows[j].config.form === "direct" && /решающих$/.test(n) && k === 7 ? "решают все" : c[k][0]}</b></td>`).join("")}</tr>`).join("")}</table></div>
+    ${names.map((n, k) => `<tr><td>${n}</td>${cells.map((c, j) => `<td><b>${c[k][0]}</b></td>`).join("")}</tr>`).join("")}</table></div>
     <div class="note">Сравнение честно только между прогонами одного города: то же число жителей, месяцев, то же зерно и та же доля злодеев. Влияние злодеев видно по паре прогонов, которые отличаются только их долей.</div>`;
 }
 

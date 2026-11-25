@@ -18,6 +18,9 @@ VILLAIN = (
 )
 FORM = {
     "direct": "Every resident may vote on every law.",
+    "liquid": ("Every resident may vote on every law. A resident may also hand their vote to any resident they trust and take it "
+               "back at any time: if they do not vote themselves, their vote follows that resident's vote. How many votes a "
+               "resident holds is public."),
     "council": "Laws are decided by an elected council; residents elect it in the first month.",
     "lottery": "Laws are decided by a small council drawn by lot from all residents; the lot is redrawn every few months.",
 }
@@ -45,8 +48,12 @@ def user_prompt(view: dict) -> str:
              f"Town fund: {town['fund']} coins" + (f", last dividend {town['dividend']:g} each." if town["dividend"] is not None else ".")]
     if me["role"]:
         lines.append("This person is a member of the council and has a vote on this law.")
-    elif view["form"] != "direct":
+    elif view["form"] in ("council", "lottery"):
         lines.append(f"This person has no vote on laws. Those who decide: {', '.join(town['deciders']) or 'not chosen yet'}.")
+    if view["delegation"]:
+        d = view["delegation"]
+        lines.append((f"This person has handed their vote to {d['to']} (resident {d['to_id']})." if d["to"] else "This person has not handed their vote to anyone.")
+                     + (f" {d['held']} residents have handed their votes to this person." if d["held"] else ""))
     if view["last_month"]:
         last = view["last_month"]
         lines.append(f"Last month the law «{last['law']}» was {'passed' if last['passed'] else 'rejected'}: {last['tally']['for']} for, {last['tally']['against']} against.")
@@ -114,6 +121,8 @@ def tools(view: dict) -> list[dict]:
         _fn("send_message", "Send a private message to a resident.", {"to_id": number, "text": text}, ["to_id", "text"]),
         _fn("send_coins", "Send own coins to a resident.", {"to_id": number, "amount": {"type": "integer"}, "note": text}, ["to_id", "amount", "note"]),
     ]
+    if view["delegation"]:
+        out.append(_fn("delegate_vote", "Hand own vote to a resident this person trusts, or take it back by giving own number or -1.", {"to_id": number}, ["to_id"]))
     out.append(_fn("remember", "Keep one short line in mind for the coming months: a promise, a debt, an impression of someone. Use only when there is something worth keeping.", {"text": text}, ["text"]))
     if view["phase"] == "decide" and view["me"]["can_vote"]:
         out.append(_fn("vote", "Vote on this month's law.", {"choice": {"type": "string", "enum": ["for", "against", "abstain"]}}, ["choice"]))
@@ -124,7 +133,7 @@ def tools(view: dict) -> list[dict]:
     return out
 
 
-RENAME = {"plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer"}
+RENAME = {"plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
 
 
 def parse(tool_calls) -> list[dict]:
