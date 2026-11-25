@@ -15,6 +15,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,6 +27,15 @@ RUNS = HERE / "runs"
 TWINS = HERE / "data" / "twins.json"
 MODELS = {"chatgpt/gpt-6.2-sol": "gpt-6.2-sol, подписка ChatGPT", "sonnet": "Claude Sonnet, подписка", "haiku": "Claude Haiku, подписка"}
 JOBS: dict[str, subprocess.Popen] = {}
+QUEUE: list[tuple[str, list[str], dict]] = []  # прогоны на модели идут по одному: каждый поднимает свой каркас и свою прокладку
+
+
+def worker() -> None:
+    while True:
+        if QUEUE and not any(job.poll() is None for job in JOBS.values()):
+            name, command, env = QUEUE.pop(0)
+            JOBS[name] = subprocess.Popen(command, env=env, stdout=(RUNS / f"{name}.log").open("w"), stderr=subprocess.STDOUT, cwd=ROOT)
+        time.sleep(1)
 
 # мир не зависит от каркаса, поэтому грузится файлом: импорт пакета agentsociety2 требует настроек модели
 _spec = importlib.util.spec_from_file_location(
@@ -55,7 +65,7 @@ def run_id(prefix: str, c: dict) -> str:
 
 def start(body: dict) -> list[str]:
     RUNS.mkdir(exist_ok=True)
-    forms = list(world.FORMS) if body.get("all_forms") else [body.get("form", "direct")]
+    forms = list(world.FORMS) if body.get("all_forms") else body.get("forms") or [body.get("form", "direct")]
     ids = []
     for form in forms:
         c = clean(dict(body, form=form))
@@ -69,25 +79,46 @@ def start(body: dict) -> list[str]:
             if c["residents"] * c["months"] > 400:
                 raise ValueError("для жителей на модели прогон ограничен: жителей × месяцев не больше 400")
             name = run_id("model-" + model.split("/")[-1].replace(".", ""), c)
-            if name in JOBS and JOBS[name].poll() is None:
-                raise ValueError("такой прогон уже идёт")
+            if name in JOBS and JOBS[name].poll() is None or any(q[0] == name for q in QUEUE):
+                raise ValueError("такой прогон уже идёт или стоит в очереди")
             (RUNS / f"{name}.json").unlink(missing_ok=True)
             with socket.socket() as s:  # свободный порт для прокладки этого прогона
                 s.bind(("127.0.0.1", 0))
                 port = s.getsockname()[1]
-            log = (RUNS / f"{name}.log").open("w")
-            JOBS[name] = subprocess.Popen(
+            JOBS.pop(name, None)
+            (RUNS / f"{name}.cost.json").unlink(missing_ok=True)
+            QUEUE.append((name,
                 [str(ROOT / "polity/run_with_subscription.sh"), str(HERE / "run_city.py"), "--form", c["form"],
                  "--residents", str(c["residents"]), "--months", str(c["months"]), "--villains", str(c["villain_share"]),
                  "--seed", str(c["seed"]), "--threshold", str(c["threshold"]), "--population", c["population"], "--name", name] + (["--bulletin"] if c["bulletin"] else []),
-                env=dict(os.environ, MODEL=model, PORT=str(port), SHIM_CONCURRENCY="6"), stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
+                dict(os.environ, MODEL=model, PORT=str(port), SHIM_CONCURRENCY="6")))
         ids.append(name)
     return ids
+
+
+def sidecar(path: Path) -> dict | None:
+    """Полный расход прогона на модели, записанный сценарием прогона: вместе с переводами запросов маршрутизатором."""
+    extra = path.with_suffix(".cost.json")
+    try:
+        return json.loads(extra.read_text(encoding="utf-8")) if extra.is_file() else None
+    except ValueError:
+        return None
+
+
+def town(query: dict) -> dict:
+    """Город для экрана создания прогона: кто в нём живёт и какие законы в повестке. Зависит от источника, числа жителей и зерна."""
+    c = clean({k: v[0] for k, v in query.items()})
+    city = world.City(c)
+    return {"people": [{"id": q["id"], "name": q["name"], "age": q["age"], "job_ru": q["job_ru"], "wage": q["wage"], "owner": q["owner"],
+                        "villain": q["villain"]} for q in city.people],
+            "agenda": [{"title": b["title"], "kind": b["kind"]} for b in (city.agenda * 3)[:c["months"]]], "seats": city.seats}
 
 
 def listing() -> list[dict]:
     out = []
     for path in sorted(RUNS.glob("*.json"), key=lambda p: -p.stat().st_mtime):
+        if path.name.endswith(".cost.json"):
+            continue
         try:
             r = json.loads(path.read_text(encoding="utf-8"))
         except ValueError:
@@ -95,8 +126,13 @@ def listing() -> list[dict]:
         job = JOBS.get(path.stem)
         out.append({"id": path.stem, "config": r["config"], "form_name": r["form_name"], "source": r["source"], "done": r["done"],
                     "month": r["month"], "phase": r["phase"], "metrics": r["metrics"], "seats": r["seats"],
+                    "cost": (r.get("cost") or {}).get("total"), "run_cost": sidecar(path), "created": path.stat().st_mtime,
                     "running": bool(job and job.poll() is None), "failed": bool(job and job.poll() not in (None, 0) and not r["done"])})
     known = {x["id"] for x in out}
+    for name, _, _ in QUEUE:
+        out = [x for x in out if x["id"] != name]
+        out.insert(0, {"id": name, "queued": True})
+    known |= {q[0] for q in QUEUE}
     for name, job in JOBS.items():  # прогон запущен, а первой записи ещё нет: каркас поднимается около минуты
         if name not in known:
             tail = (RUNS / f"{name}.log").read_text(encoding="utf-8", errors="replace")[-400:] if (RUNS / f"{name}.log").exists() else ""
@@ -127,9 +163,16 @@ class Handler(BaseHTTPRequestHandler):
             name = parse_qs(url.query).get("id", [""])[0]
             path = RUNS / f"{Path(name).name}.json"
             if path.is_file():
-                self._send(200, path.read_bytes())
+                record = json.loads(path.read_text(encoding="utf-8"))
+                record["run_cost"] = sidecar(path)
+                self._json(record)
             else:
                 self._json({"error": "нет такого прогона"}, 404)
+        elif url.path == "/api/town":
+            try:
+                self._json(town(parse_qs(url.query)))
+            except (ValueError, KeyError, TypeError) as exc:
+                self._json({"error": str(exc)}, 400)
         else:
             self._json({"error": "нет такой страницы"}, 404)
 
@@ -140,10 +183,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ids": start(body)})
             elif self.path == "/api/delete":
                 name = Path(str(body.get("id", ""))).name
+                QUEUE[:] = [q for q in QUEUE if q[0] != name]
                 if name in JOBS and JOBS[name].poll() is None:
                     JOBS[name].terminate()
                 JOBS.pop(name, None)
-                for suffix in (".json", ".log"):
+                for suffix in (".json", ".log", ".cost.json"):
                     (RUNS / f"{name}{suffix}").unlink(missing_ok=True)
                 self._json({"ok": True})
             else:
@@ -158,6 +202,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8790
     RUNS.mkdir(exist_ok=True)
+    threading.Thread(target=worker, daemon=True).start()
     print(f"Город на рельсах: http://127.0.0.1:{port}", flush=True)
     try:
         ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
