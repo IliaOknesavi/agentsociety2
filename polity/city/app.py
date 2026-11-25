@@ -23,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 RUNS = HERE / "runs"
+TWINS = HERE / "data" / "twins.json"
 MODELS = {"chatgpt/gpt-6.2-sol": "gpt-6.2-sol, подписка ChatGPT", "sonnet": "Claude Sonnet, подписка", "haiku": "Claude Haiku, подписка"}
 JOBS: dict[str, subprocess.Popen] = {}
 
@@ -39,7 +40,9 @@ def clean(body: dict) -> dict:
     form = body.get("form", "direct")
     if form not in world.FORMS:
         raise ValueError("неизвестная форма власти")
-    return {"form": form, "residents": min(200, max(4, int(body.get("residents", 12)))),
+    twins = body.get("population") == "twins" and TWINS.is_file()
+    return {"population": "twins" if twins else "synthetic", "twins_path": str(TWINS) if twins else "",
+            "form": form, "residents": min(200, max(4, int(body.get("residents", 12)))),
             "months": min(24, max(1, int(body.get("months", 6)))),
             "villain_share": min(0.5, max(0.0, float(body.get("villain_share", 0.15)))),
             "seed": int(body.get("seed", 1)) % 100000, "threshold": min(0.9, max(0.5, float(body.get("threshold", 0.5))))}
@@ -47,7 +50,7 @@ def clean(body: dict) -> dict:
 
 def run_id(prefix: str, c: dict) -> str:
     return (f"{prefix}-{c['form']}-n{c['residents']}-m{c['months']}-v{round(c['villain_share'] * 100)}"
-            f"-t{round(c['threshold'] * 100)}-s{c['seed']}")
+            f"-t{round(c['threshold'] * 100)}-s{c['seed']}" + ("-twins" if c["population"] == "twins" else ""))
 
 
 def start(body: dict) -> list[str]:
@@ -76,7 +79,7 @@ def start(body: dict) -> list[str]:
             JOBS[name] = subprocess.Popen(
                 [str(ROOT / "polity/run_with_subscription.sh"), str(HERE / "run_city.py"), "--form", c["form"],
                  "--residents", str(c["residents"]), "--months", str(c["months"]), "--villains", str(c["villain_share"]),
-                 "--seed", str(c["seed"]), "--threshold", str(c["threshold"]), "--name", name],
+                 "--seed", str(c["seed"]), "--threshold", str(c["threshold"]), "--population", c["population"], "--name", name],
                 env=dict(os.environ, MODEL=model, PORT=str(port), SHIM_CONCURRENCY="6"), stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
         ids.append(name)
     return ids
@@ -119,7 +122,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, (HERE / "web/index.html").read_bytes(), "text/html; charset=utf-8")
         elif url.path == "/api/runs":
             self._json({"runs": listing(), "models": MODELS, "forms": world.FORMS,
-                        "proxy": bool(os.getenv("HTTPS_PROXY") or os.getenv("https_proxy"))})
+                        "proxy": bool(os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")), "twins": TWINS.is_file()})
         elif url.path == "/api/run":
             name = parse_qs(url.query).get("id", [""])[0]
             path = RUNS / f"{Path(name).name}.json"

@@ -86,7 +86,9 @@
     </div>
     <label>Порог принятия закона, % голосов «за»</label>
     <input id="threshold" type="number" value="50" min="50" max="90">
-    <label>Жители</label>
+    <label>Откуда жители</label>
+    <select id="population"><option value="synthetic">условные: возраст, занятие и характер случайны</option><option value="twins">люди из опроса Twin-2K-500</option></select>
+    <label>Кто за них решает</label>
     <div class="seg two" id="mode">
       <button data-v="rules" class="on">По правилам<small>без модели, сразу</small></button>
       <button data-v="model">На модели<small>AgentSociety 2</small></button>
@@ -94,6 +96,7 @@
     <div id="modelbox" hidden><label>Модель</label><select id="model"></select><div id="proxywarn" class="note warn" style="margin-top:8px" hidden>В окружении приложения не задан HTTPS_PROXY. Если модель доступна только через локальный прокси, прогон на модели зависнет: запустите приложение с этой переменной.</div></div>
     <button class="go" id="run">Запустить</button>
     <button class="go second" id="runall">Все три формы на этом городе</button>
+    <button class="go second" id="runpair">Пара: этот город со злодеями и без</button>
     <div id="msg" class="muted" style="margin-top:8px"></div>
     <h2>Прогоны</h2>
     <div id="runs"></div>
@@ -101,7 +104,7 @@
   <main>
     <div class="tabs" id="tabs">
       <button data-v="month" class="on">Ход месяца</button><button data-v="people">Жители</button>
-      <button data-v="totals">Итоги прогона</button><button data-v="compare">Сравнение форм</button>
+      <button data-v="totals">Итоги прогона</button><button data-v="compare">Сравнение</button><button data-v="checks">Проверки жителя</button>
       <label class="toggle"><input type="checkbox" id="reveal"> показывать, кто злодей</label>
     </div>
     <div id="view"><div class="empty">Запустите прогон слева или выберите готовый.</div></div>
@@ -114,6 +117,7 @@ const WAVE = {plan:"план месяца", talk:"обсуждение", decide:
 const state = {form:"direct", mode:"rules", runs:[], forms:{}, cur:null, rec:null, tab:"month", month:1, picked:new Set()};
 const pct = x => x == null ? "нет" : Math.round(x * 100) + "%";
 const num = x => x == null ? "нет" : Math.round(x).toLocaleString("ru-RU");
+const signed = x => x == null ? "нет" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x)).toLocaleString("ru-RU");
 
 async function api(path, body) {
   const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : undefined);
@@ -124,23 +128,24 @@ async function api(path, body) {
 
 function params() {
   return {form:state.form, residents:+$("#residents").value, months:+$("#months").value, villain_share:+$("#villains").value / 100,
-          seed:+$("#seed").value, threshold:+$("#threshold").value / 100, mode:state.mode, model:$("#model").value};
+          seed:+$("#seed").value, threshold:+$("#threshold").value / 100, mode:state.mode, model:$("#model").value, population:$("#population").value};
 }
 
-async function launch(all) {
+async function launch(all, pair) {
   $("#msg").textContent = state.mode === "model" ? "Запускаю. Каркас поднимается около минуты, затем запись пойдёт по волнам." : "";
   try {
     const out = await api("/api/run", {...params(), all_forms:all});
+    if (pair) out.ids.push(...(await api("/api/run", {...params(), villain_share:0})).ids);
     await refresh();
     out.ids.forEach(id => state.picked.add(id));
     await open(out.ids[0]);
-    if (all) { state.tab = "compare"; draw(); }
+    if (all || pair) { state.tab = "compare"; draw(); }
   } catch (e) { $("#msg").textContent = "Не запустилось: " + e.message; }
 }
 
 async function refresh() {
   const data = await api("/api/runs");
-  state.runs = data.runs; state.forms = data.forms; $("#proxywarn").hidden = data.proxy;
+  state.runs = data.runs; state.forms = data.forms; $("#proxywarn").hidden = data.proxy; $("#population").options[1].disabled = !data.twins;
   if (!$("#form").children.length) {
     const hint = {direct:"голосуют все жители", council:"совет, выбранный в первый месяц", lottery:"совет по жребию, жребий раз в три месяца"};
     $("#form").innerHTML = Object.entries(data.forms).map(([k, v]) => `<button data-v="${k}" class="${k === state.form ? "on" : ""}">${esc(v)}<small>${hint[k]}</small></button>`).join("");
@@ -150,7 +155,7 @@ async function refresh() {
     if (!r.config) return `<div class="run"><b>${esc(r.id)}</b><small>${r.failed ? "не запустился: " + esc((r.log || "").slice(-160)) : "каркас поднимается…"}</small><button class="x" data-del="${esc(r.id)}">×</button></div>`;
     const c = r.config, status = r.done ? `<span class="tag good">готов</span>` : r.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`;
     return `<div class="run ${r.id === state.cur ? "on" : ""}" data-id="${esc(r.id)}"><b><input type="checkbox" data-pick="${esc(r.id)}" ${state.picked.has(r.id) ? "checked" : ""}>${esc(r.form_name)}</b>
-      <small>${c.residents} жителей, ${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%, зерно ${c.seed}<br>${esc(r.source)}</small><br>${status}
+      <small>${c.residents} жителей${c.population === "twins" ? " из опроса" : ""}, ${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%, зерно ${c.seed}<br>${esc(r.source)}</small><br>${status}
       ${r.done ? `<span class="tag ${r.metrics.harmful_passed ? "bad" : "good"}">убыточных принято ${r.metrics.harmful_passed} из ${r.metrics.harmful_total}</span>` : ""}
       <button class="x" data-del="${esc(r.id)}" title="удалить">×</button></div>`;
   }).join("") || `<div class="muted">Пока нет ни одного.</div>`;
@@ -201,10 +206,10 @@ function drawMonth() {
 
 function drawPeople() {
   const rec = state.rec, reveal = $("#reveal").checked;
-  return `<div class="card"><table><tr><th>Житель</th><th>Занятие</th><th>Характер</th><th class="n">Доход</th><th class="n">Деньги в начале</th><th class="n">Деньги сейчас</th><th class="n">Свободных часов</th><th class="n">Месяцев решал</th><th class="n">Записей</th><th class="n">Его прочли</th><th class="n">Подписчиков</th></tr>
+  return `<div class="card"><table><tr><th>Житель</th><th>Занятие</th><th>Характер или взгляды</th><th class="n">Доход</th><th class="n">Деньги в начале</th><th class="n">Деньги сейчас</th><th class="n">Свободных часов</th><th class="n">Месяцев решал</th><th class="n">Записей</th><th class="n">Его прочли</th><th class="n">Подписчиков</th></tr>
     ${rec.people.map(p => `<tr><td><b>${esc(p.name)}</b>, ${p.age}${reveal && p.villain ? ` <span class="tag bad">злодей</span>` : ""}${p.owner ? ` <span class="tag">владелец</span>` : ""}</td><td>${esc(p.job_ru)}</td><td>${esc(p.temper_ru)}</td>
       <td class="n">${p.wage}</td><td class="n">${num(p.start_savings)}</td><td class="n">${num(p.money)}</td><td class="n">${p.free}</td><td class="n">${p.decided_months}</td><td class="n">${p.posts}</td><td class="n">${p.views}</td><td class="n">${p.followers}</td></tr>`).join("")}</table></div>
-    <div class="note">Жители условные: возраст, занятие и характер розданы случайно по зерну. Злодеи тоже розданы случайно, их место в городе не задаётся.</div>`;
+    <div class="note">${rec.config.population === "twins" ? "Жители взяты из опроса Twin-2K-500: возраст, занятость, доход семьи, образование и взгляды у каждого его собственные, как и выбор в игре на делёж, который стоит в описании. Имена условные." : "Жители условные: возраст, занятие и характер розданы случайно по зерну."} Злодеи розданы случайно, их место в городе не задаётся.</div>`;
 }
 
 function chart(series, labels) {
@@ -222,7 +227,7 @@ function stats(m, cfg) {
   return [
     [`${m.harmful_passed} из ${m.harmful_total}`, "убыточных законов принято", "закон убыточен, если по расчёту города типичный житель теряет; спорные законы о перераспределении в счёт не идут"],
     [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", ""],
-    [num(m.wealth), "достаток типичного жителя через год", `без единого закона ${num(m.wealth_no_laws)}, при принятии только выгодных ${num(m.wealth_best)}`],
+    [signed(m.gain), "монет типичному жителю от принятых законов", `через год, в сравнении с тем же городом без единого закона; только выгодные законы дали бы ${signed(m.gain_best)}`],
     [pct(m.turnout), "явка тех, у кого право решать", ""],
     [pct(m.studied_deciders), "решающих заказали расчёт закона", `среди всех жителей ${pct(m.studied_all)}`],
     [`${m.political_posts} из ${m.posts}`, "записей о законе", `комментариев ${m.comments}, просмотров ${m.views}`],
@@ -255,14 +260,27 @@ function drawCompare() {
   if (rows.length < 2) return `<div class="empty">Отметьте галочками слева два прогона или больше, либо нажмите «Все три формы на этом городе».</div>`;
   const names = stats(rows[0].metrics, {form:"council"}).map(s => s[1]);
   const cells = rows.map(r => stats(r.metrics, {form:"council"}));
-  return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит., ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
+  return `<div class="card"><table><tr><th></th>${rows.map(r => `<th><b style="color:#1f2328">${esc(r.form_name)}</b><br>${r.config.residents} жит.${r.config.population === "twins" ? " из опроса" : ""}, ${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%, зерно ${r.config.seed}<br>${esc(r.source)}${r.done ? "" : "<br>ещё идёт"}</th>`).join("")}</tr>
     ${names.map((n, k) => `<tr><td>${n}</td>${cells.map((c, j) => `<td><b>${rows[j].config.form === "direct" && /решающих$/.test(n) && k === 7 ? "решают все" : c[k][0]}</b></td>`).join("")}</tr>`).join("")}</table></div>
     <div class="note">Сравнение честно только между прогонами одного города: то же число жителей, месяцев, то же зерно и та же доля злодеев. Влияние злодеев видно по паре прогонов, которые отличаются только их долей.</div>`;
 }
 
+const CHECKS = `<div class="card"><h3>Насколько житель на модели похож на человека</h3>
+  <div class="muted">Замеры 25 ноября на gpt-6.2-sol с промптом жителя: модель предсказывает поступок человека в третьем лице. Двойники взяты из набора Twin-2K-500: у человека скрывается его настоящий ответ, модель восстанавливает его по остальной анкете.</div>
+  <table style="margin-top:10px"><tr><th>Что проверено</th><th>С чем сверено</th><th>Итог</th></tr>
+  <tr><td><b>Взгляды.</b> Отношение к 10 политическим мерам, 12 двойников</td><td>ответ самого человека; потолком служит то, как человек повторяет свой ответ через несколько недель</td><td><span class="tag good">годится</span> 0,70 потолка, связь 0,59; поддержка мер 0,57 при 0,57 у людей</td></tr>
+  <tr><td><b>Честность.</b> Игра на обман и отчёт о броске кубика, 20 и 60 условных жителей</td><td>доли лжи у людей в опытах: 36%, 17%, 52%; сдвиг отчёта о кубике 0,25</td><td><span class="tag good">годится</span> 45%, 5%, 55%; сдвиг 0,30; среднее отклонение 0,07. С промптом от первого лица модель не солгала ни разу</td></tr>
+  <tr><td><b>Взятка тому, кто решает.</b> 20 условных жителей</td><td>чисел о людях нет</td><td><span class="tag">без сверки</span> берут 45%, при долге все; обычный житель сам взятку не предложил ни разу из 40</td></tr>
+  <tr><td><b>Терпение.</b> Выбор «больше позже или меньше раньше», 30 двойников</td><td>выбор самого человека</td><td><span class="tag bad">не годится</span> людей модель не различает: связь −0,07; терпение завышено на 0,15</td></tr>
+  <tr><td><b>Делёж денег.</b> Три игры на $5, 30 двойников</td><td>выбор самого человека</td><td><span class="tag">перемерить</span> средние суммы близки, $2,10-2,80 при $1,93-2,50 у людей; в замере была утечка</td></tr>
+  <tr><td><b>Достаток и нечестность.</b> 20 жителей, уравновешенных по занятию и характеру</td><td>работы о людях: общей связи нет</td><td><span class="tag acc">исправлено</span> модель связь завышает; её рвёт личный прошлый поступок в описании жителя</td></tr>
+  </table></div>
+  <div class="note">В город можно взять людей из опроса Twin-2K-500: в описание жителя идут его демография, взгляды и выбор в игре на делёж. Полная анкета человека, на которой мерились взгляды, в город не идёт: она занимает 6,6 тысячи токенов на каждый вызов. Терпение в описание жителя не входит, пока не выбран способ его раздачи. Поведение в массе (сдвиг мнений после обсуждения, исход реальных голосований) с данными о людях ещё не сверялось.</div>`;
+
 function draw() {
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === state.tab));
   if (state.tab === "compare") { $("#view").innerHTML = drawCompare(); return; }
+  if (state.tab === "checks") { $("#view").innerHTML = CHECKS; return; }
   if (!state.rec) { $("#view").innerHTML = `<div class="empty">Запустите прогон слева или выберите готовый.</div>`; return; }
   $("#view").innerHTML = state.tab === "month" ? drawMonth() : state.tab === "people" ? drawPeople() : drawTotals();
 }
@@ -277,6 +295,7 @@ document.addEventListener("click", async e => {
   else if (t.dataset.month) { state.month = +t.dataset.month; draw(); }
   else if (t.id === "run") launch(false);
   else if (t.id === "runall") launch(true);
+  else if (t.id === "runpair") launch(false, true);
   else if (t.classList.contains("run") && t.dataset.id) { state.month = 1; open(t.dataset.id); }
 });
 $("#reveal").addEventListener("change", draw);

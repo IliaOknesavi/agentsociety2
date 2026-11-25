@@ -34,16 +34,18 @@ class CityRailsEnv(EnvBase):
 
     def __init__(self, residents: int = 12, months: int = 6, form: str = "direct", seats: int = 0,
                  villain_share: float = 0.15, seed: int = 1, threshold: float = 0.5, record_path: str = "",
-                 source: str = "жители на модели"):
+                 source: str = "жители на модели", population: str = "synthetic", twins_path: str = ""):
         """
         :param residents: number of residents; agent ids are 1..residents
         :param months: length of the run in months
         :param form: who decides: direct, council or lottery
         :param record_path: file that receives the full record of the run after every wave
+        :param population: synthetic residents or twins: people from the Twin-2K-500 survey, read from twins_path
         """
         super().__init__()
         self.city = City(Config(residents=residents, months=months, form=form, seats=seats,
-                                villain_share=villain_share, seed=seed, threshold=threshold))
+                                villain_share=villain_share, seed=seed, threshold=threshold,
+                                population=population, twins_path=twins_path))
         self.city.source = source
         self.record_path = record_path
         self._lock = asyncio.Lock()

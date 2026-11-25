@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import random
 import statistics
 from dataclasses import asdict, dataclass
@@ -43,6 +44,19 @@ LIFE = [  # будничные события месяца: у жителя ес
     "they are looking for someone to fix the stove", "a relative is getting married next month",
 ]
 POST0 = 100  # номера записей в ленте начинаются со 100, чтобы их нельзя было спутать с номерами жителей
+# Жители из опроса Twin-2K-500. Занятость: по-английски, по-русски, свободные часы, своё ли дело (тогда владеет мастерской)
+WORK = {"Full-time employment": ("works full time", "полная занятость", 150, False),
+        "Part-time employment": ("works part time", "частичная занятость", 220, False),
+        "Unemployed": ("out of work", "без работы", 300, False),
+        "Self-employed": ("self-employed, runs a small workshop", "своё дело, мастерская", 150, True),
+        "Home-maker": ("a home-maker", "ведёт дом", 220, False), "Student": ("a student", "учится", 220, False),
+        "Retired": ("retired", "на пенсии", 300, False)}
+INCOME = {"Less than $30,000": 45, "$30,000-$50,000": 75, "$50,000-$75,000": 105, "$75,000-$100,000": 145, "$100,000 or more": 220}
+VIEWS = {"Very conservative": "очень консервативные взгляды", "Conservative": "консервативные взгляды", "Moderate": "умеренные взгляды",
+         "Liberal": "либеральные взгляды", "Very liberal": "очень либеральные взгляды", "": "взгляды не названы"}
+FEMALE = {"Anna", "Vera", "Daria", "Zoya", "Kira", "Maria", "Olga", "Rita", "Tamara", "Ulyana", "Elina", "Yana", "Bella", "Galina",
+          "Eva", "Inna", "Lidia", "Nina", "Polina", "Sofia", "Alla", "Alisa", "Dina", "Zhanna", "Klara", "Mila", "Oksana", "Raisa",
+          "Taisia", "Faina", "Yulia"}
 KEPT = [5, 6, 7, 8, 10]  # прошлый поступок: сколько оставил себе из 10 монет; рвёт связь достатка и честности
 
 # Повестка. kind: impatient (выгода сейчас, убыток потом), deceptive (обещание расходится с расчётом),
@@ -99,6 +113,8 @@ class Config:
     fund_per_head: int = 300
     hours_per_post: int = 10  # сколько часов ленты дают одну показанную запись в волне; допущение
     horizon: int = 12  # на сколько месяцев вперёд считается расчёт последствий
+    population: str = "synthetic"  # synthetic: условные жители; twins: люди из опроса Twin-2K-500
+    twins_path: str = ""  # файл, который пишет polity/city/export_twins.py
 
 
 class Economy:
@@ -181,9 +197,29 @@ class City:
         n = c.residents
         self.seats = c.seats or (3 if n < 16 else 5 if n < 30 else 7)
         jobs = [JOBS[k % len(JOBS)] for k in rng.sample(range(n * 3), n)]
+        if not any(j[4] for j in jobs):  # в городе должна быть хотя бы одна мастерская, иначе закон о поддержке мастерских пуст
+            for k in rng.sample(range(n), max(1, n // 10)):
+                jobs[k] = next(j for j in JOBS if j[4])
         villains = set(rng.sample(range(n), round(n * c.villain_share)))
         self.people = []
-        for i in range(n):
+        twins = rng.sample(json.loads(open(c.twins_path, encoding="utf-8").read()), n) if c.population == "twins" else []
+        women, men = [x for x in NAMES if x in FEMALE], [x for x in NAMES if x not in FEMALE]
+        for i, t in enumerate(twins):  # житель из опроса: занятие, доход и взгляды его собственные, имя условное
+            en, ru, free, owner = WORK[t["employment"]]
+            pool = women if t["sex"] == "Female" else men
+            name = pool.pop(0) if pool else f"Resident{i}"
+            wage = INCOME[t["income"]]
+            desc = (f"{name}, {t['age']} years old, {t['sex'].lower()}, lives in the {t['region']}, {t['education'].lower()}, "
+                    f"{t['marital'].lower()}, household of {t['household'].lower()}, {en}, family income last year {t['income']}, "
+                    f"political views: {(t['views'] or 'not stated').lower()}, party: {t['party'] or 'none'}"
+                    + (f". In an earlier study this person was given $5 to split with a stranger and kept ${t['kept']}" if t["kept"] is not None else ""))
+            self.people.append({
+                "id": i, "name": name, "age": t["age"], "job": en, "job_ru": ru, "temper": "", "temper_ru": f"{VIEWS[t['views']]}, {t['party']}",
+                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "kept": t["kept"], "desc": desc, "twin": t["pid"],
+                "interest": round(rng.betavariate(2, 3), 2), "patience": round(rng.uniform(0.15, 0.85), 2),
+                "social": round(rng.betavariate(2, 2), 2), "start_savings": round(wage * rng.choice([-2, -0.5, 0.5, 1, 2, 4, 8]) * (3 if owner else 1)),
+            })
+        for i in range(0 if twins else n):
             en, ru, wage, free, owner = jobs[i]
             temper = TEMPER[rng.randrange(len(TEMPER))]
             savings = round(wage * rng.choice([-2, -0.5, 0.5, 1, 2, 4, 8]) * (3 if owner else 1))
@@ -227,7 +263,8 @@ class City:
         bill["effects"] = self._forecast(bill)
         typical = statistics.median(bill["effects"]["total"])
         bill["harmful"] = typical < 0
-        bill["contested"] = bill["kind"] == "redistribution"  # кому помогать за общий счёт, расчётом не решается
+        # в счёт убыточных и выгодных не идут: перераспределение (расчётом не решается) и законы почти без последствий
+        bill["contested"] = bill["kind"] == "redistribution" or abs(typical) < 1
         bill["analysis"] = (
             f"Расчёт на {c.horizon} месяцев. Типичный житель: {typical:+.0f} монет к достатку (деньги на руках и доля фонда), "
             f"из них в первый месяц на руки {statistics.median(bill['effects']['now']):+.0f}. Фонд города к концу срока: "
@@ -320,7 +357,13 @@ class City:
                          "author_role": self.role(q["author"]), "text": q["text"],
                          "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-4:]]})
         headlines = [{"post_id": q["id"] + POST0, "author": self.people[q["author"]]["name"], "start": q["text"][:60]} for q in fresh[shown:shown * 2 + 2]]
-        mine = [q for q in self.posts if q["author"] == i and q["comments"]][-2:]
+        last = (self.month, self.phase - 1) if self.phase else (self.month - 1, 2)  # прошлая волна: новое показывается один раз
+        fresh_at = lambda x: (x["month"], x["phase"]) == last
+        mine = [q for q in self.posts if q["author"] == i and any(fresh_at(c) and c["author"] != i for c in q["comments"])][-2:]
+        writers = sorted({m["from"] for m in self.messages if m["to"] == i and fresh_at(m)})
+        threads = [{"with_id": w, "with": self.people[w]["name"],
+                    "messages": [{"from": "this person" if m["from"] == i else self.people[w]["name"], "text": m["text"]}
+                                 for m in self.messages if {m["from"], m["to"]} == {i, w}][-4:]} for w in writers]
         view = {
             "month": self.month, "months": self.cfg.months, "phase": phase, "form": self.cfg.form,
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]),
@@ -336,7 +379,7 @@ class City:
             "life": random.Random(self.cfg.seed * 100003 + i * 1009 + self.month).choice(LIFE),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
-            "inbox": [{"from_id": m["from"], "from": self.people[m["from"]]["name"], "text": m["text"]} for m in self.messages if m["to"] == i and m["month"] == self.month and m["phase"] < self.phase or m["to"] == i and m["month"] == self.month - 1 and m["phase"] == 2],
+            "inbox": threads,
             "money_in": [{"from_id": t["from"], "from": self.people[t["from"]]["name"], "amount": t["amount"], "note": t["note"]} for t in self.transfers if t["to"] == i and t["month"] == self.month],
             "people": [{"id": q["id"], "name": q["name"], "job": q["job"], "role": self.role(q["id"])} for q in self.people if q["id"] != i],
             "election": ({"stage": "nominate" if phase == "plan" else "vote", "seats": self.seats,
@@ -416,7 +459,7 @@ class City:
             if not 0 <= number < len(self.posts) or not self._spend(i, COST["comment"]):
                 return "нет такой записи или часов"
             q = self.posts[number]
-            q["comments"].append({"author": i, "text": str(a["text"]).strip()[:300], "month": self.month})
+            q["comments"].append({"author": i, "text": str(a["text"]).strip()[:300], "month": self.month, "phase": self.phase})
         elif kind == "follow":
             target = int(a["person_id"])
             if target == i or not 0 <= target < n:
@@ -465,11 +508,16 @@ class City:
             ideal.month(m["deciders"])
         mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else 0.0
 
-        def typical(eco: Economy) -> float:  # достаток типичного жителя через горизонт: вложения успевают окупиться
+        def ahead(eco: Economy) -> list[float]:  # достаток каждого жителя через горизонт: вложения успевают окупиться
             eco = copy.deepcopy(eco)
             for _ in range(self.cfg.horizon):
                 eco.month(self.deciders)
-            return round(statistics.median(eco.wealth()), 1)
+            return eco.wealth()
+
+        # что принятые законы дали типичному жителю: медиана личных разниц с тем же городом без единого закона.
+        # Медиана самого достатка не годится: в малом городе в середине списка может оказаться тот, кому закон платит
+        base = ahead(none)
+        gain = lambda eco: round(statistics.median(a - b for a, b in zip(ahead(eco), base)), 1)
 
         harmful = [m for m in months if m["bill"]["harmful"] and not m["bill"]["contested"]]
         good = [m for m in months if not m["bill"]["harmful"] and not m["bill"]["contested"]]
@@ -485,7 +533,7 @@ class City:
             "laws": len(months), "passed": sum(m["passed"] for m in months),
             "harmful_total": len(harmful), "harmful_passed": sum(m["passed"] for m in harmful),
             "good_total": len(good), "good_passed": sum(m["passed"] for m in good),
-            "wealth": typical(self.eco), "wealth_no_laws": typical(none), "wealth_best": typical(ideal),
+            "gain": gain(self.eco), "gain_best": gain(ideal),
             "turnout": mean([(m["tally"]["for"] + m["tally"]["against"]) / max(1, m["tally"]["entitled"]) for m in months]),
             "studied_all": mean([len(m["studied"]) / n for m in months]), "studied_deciders": mean(entitled_studied),
             "posts": len(self.posts), "political_posts": sum(q["about_bill"] for q in self.posts),
@@ -515,6 +563,8 @@ class City:
 
 def describe(p: dict) -> str:
     """Житель одной строкой для промпта. Достаток словами не называется: вместо него числа и прошлый поступок."""
+    if p.get("desc"):
+        return p["desc"]
     return (f"{p['name']}, {p['age']}, {p['job']}, {p['temper']}. In an earlier study this person was given 10 coins "
             f"to split with a stranger and kept {p['kept']}")
 
@@ -590,7 +640,8 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         c.submit(1, [{"type": "transfer", "to_id": 2, "amount": 10 ** 9}])
         assert abs(sum(c.eco.savings) + c.eco.fund - before) < 1e-6, "перевод не создаёт денег"
         r = run_scripted({"form": form, "residents": 20, "months": 6, "seed": 3})
+        assert all(describe(p) for p in r["people"])
         m = r["metrics"]
         assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form == "direct" else 5) for x in r["months"]), form
-        print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, достаток {m['wealth']} "
-              f"(без законов {m['wealth_no_laws']}, лучший {m['wealth_best']}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
+        print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному жителю {m['gain']:+} "
+              f"(только выгодные дали бы {m['gain_best']:+}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")

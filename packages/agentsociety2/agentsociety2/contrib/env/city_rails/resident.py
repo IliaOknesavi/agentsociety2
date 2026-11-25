@@ -73,8 +73,9 @@ def user_prompt(view: dict) -> str:
         lines.append("Other posts, not read: " + "; ".join(f"{h['author']}: «{h['start']}»" for h in view["headlines"]))
     for q in view["replies_to_me"]:
         lines.append(f"Comments under this person's post #{q['post_id']}: " + "; ".join(f"{c['author']}: {c['text']}" for c in q["comments"]))
-    for m in view["inbox"]:
-        lines.append(f"Private message from {m['from']} (resident {m['from_id']}): {m['text']}")
+    for t in view["inbox"]:
+        lines.append(f"Private conversation with {t['with']} (resident {t['with_id']}), newest last: "
+                     + " | ".join(f"{m['from']}: {m['text']}" for m in t["messages"]))
     for t in view["money_in"]:
         lines.append(f"Received {t['amount']} coins from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
     lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))

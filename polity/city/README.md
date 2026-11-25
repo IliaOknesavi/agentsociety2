@@ -26,6 +26,16 @@
 MODEL=chatgpt/gpt-6.2-sol polity/run_with_subscription.sh polity/city/run_city.py --form council --residents 12 --months 4
 ```
 
+## Откуда жители
+
+- **условные**: возраст, занятие и характер розданы случайно по зерну;
+- **из опроса Twin-2K-500**: у жителя его собственные возраст, занятость, доход семьи, образование, взгляды и выбор
+  в игре на делёж; имя условное. Выгрузка делается один раз интерпретатором polity-sim:
+
+```bash
+cd ~/aist/polity-sim && .venv/bin/python ~/aist/agentsociety2/polity/city/export_twins.py
+```
+
 ## Как устроен месяц
 
 Месяц идёт тремя волнами, одна волна это один шаг общества в каркасе и один вызов модели на жителя.
@@ -65,13 +75,15 @@ MODEL=chatgpt/gpt-6.2-sol polity/run_with_subscription.sh polity/city/run_city.p
 | `packages/agentsociety2/agentsociety2/contrib/agent/resident_agent.py` | агент `ResidentAgent`: один вызов модели на волну |
 | `polity/city/run_city.py` | прогон в каркасе из командной строки |
 | `polity/city/app.py`, `polity/city/web/index.html` | приложение |
-| `polity/city/runs/` | записи прогонов, в git не попадают |
+| `polity/city/export_twins.py` | выгрузка жителей из опроса в `polity/city/data/twins.json` |
+| `polity/city/runs/`, `polity/city/data/` | записи прогонов и выгрузка опроса, в git не попадают |
 
 Самопроверка мира без модели: `.venv/bin/python packages/agentsociety2/agentsociety2/contrib/env/city_rails/world.py`.
 
 ## Чего пока нет
 
-- Жители условные: возраст, занятие и характер розданы случайно. Двойники Twin-2K-500 не подключены.
+- Жители из опроса Twin-2K-500 получают короткое описание: демография, взгляды, выбор в игре на делёж. Полная анкета
+  в промпт не идёт, поэтому замер сходства взглядов на полной анкете к таким жителям не относится.
 - Терпение жителя в промпт не входит: модель его не различает, способ раздачи не выбран.
 - Продажа страницы и реклама в ленте не сделаны; оплаченная запись и взятка складываются из перевода и письма.
 - Законы вносит среда по готовой повестке, жители законов не предлагают.
