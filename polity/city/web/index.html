@@ -98,7 +98,8 @@
 <script>
 const $ = s => document.querySelector(s), esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const KIND = {impatient:["выгода сейчас, убыток потом","acc"], deceptive:["обещание расходится с расчётом","bad"], investment:["затраты сейчас, выгода потом","blue"], redistribution:["перераспределение",""], selfpay:["оплата решающих",""]};
-const WAVE = {plan:"план месяца", talk:"обсуждение", decide:"решение"}, WAVES = ["plan", "talk", "decide"];
+const WAVE = {plan:"план месяца", talk:"обсуждение", decide:"решение", nominate:"выборы: выдвижение", campaign:"выборы: кампания", debate:"выборы: дебаты", vote:"выборы: голосование", runoff:"выборы: второй тур"}, WAVES = ["plan", "talk", "decide"];
+const RACE = ["nominate", "campaign", "debate", "vote", "runoff"], ALLWAVES = [...RACE, ...WAVES];
 const FORM_HINT = {direct:"голосуют все жители", liquid:"голосуют все; голос можно передать доверенному и забрать назад", council:"совет, который жители выбирают в первый месяц", lottery:"совет по жребию, жребий раз в три месяца"};
 const CHOICE = {for:"за", against:"против", abstain:"воздержался", none:"нет мнения"};
 const COLOR = {for:"#2e9e63", against:"#d2463c", abstain:"#9aa0a6", none:"#b9b3a6"};
@@ -240,7 +241,7 @@ async function launch() {
 /* ---------- сцена: запуск ---------- */
 function runHead(tab) {
   const r = S.rec, c = r.config, info = S.runs.find(x => x.id === S.recId) || {};
-  const tabs = [["months", "Месяцы"], ["people", "Жители"], ["chats", "Чаты"], ["totals", "Итоги"], ["cost", "Цена"]];
+  const tabs = [["months", "Месяцы"], ...(r.elections && (r.elections.length || r.race) ? [["elections", "Выборы"]] : []), ["people", "Жители"], ["chats", "Чаты"], ["totals", "Итоги"], ["cost", "Цена"]];
   return `<div class="crumbs"><a href="#/">Запуски</a> / ${townName(c)}</div>
     <div style="display:flex;align-items:flex-start;gap:12px"><div><h1>${esc(r.form_name)}</h1><div class="muted">${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%${c.threshold > 0.5 ? ", порог " + Math.round(c.threshold * 100) + "%" : ""}${c.bulletin ? ", расчёт рассылается всем" : ""} · ${esc(r.source)} ${r.done ? `<span class="tag good">готов</span>` : info.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`}</div></div>
     <span style="flex:1"></span><button data-feed-open="0">Лента города</button><a class="btn" href="#/new?from=${S.recId}">Копия с другими настройками</a><a class="btn" href="#/compare?ids=${S.recId}">Сравнить</a></div>
@@ -293,7 +294,7 @@ function monthPanel(m) {
     : tab === "hall" ? (`<div class="muted small">Зал тех, кто решает: пишут и читают только жители с правом голоса, сейчас их ${m.deciders.length}. Остальные жители зала не видят.</div>` + (hallList(m) || `<div class="muted" style="margin-top:8px">В этом месяце в зале никто не выступал.</div>`))
     : tab === "mail" ? (ms.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)} <span class="muted small">${WAVE[WAVES[x.phase]]}</span><div>${esc(x.text)}</div></div>`).join("") || `<div class="muted">Никто никому не писал.</div>`)
     : tab === "money" ? (tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> ${U()}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`)
-    : tab === "acts" ? (WAVES.map(w => { const xs = acts.filter(x => x.phase === w); return xs.length ? `<div class="post"><b>Волна «${WAVE[w]}»</b>${xs.map(x => `<div class="small">${who(x.i, m)}: ${x.refused ? `<span style="color:var(--bad)">среда отказала: ${esc(x.refused)}</span>` : esc(act(x.a))}</div>`).join("")}</div>` : ""; }).join("") || `<div class="muted">Журнал действий есть только в запусках новой записи.</div>`)
+    : tab === "acts" ? (ALLWAVES.map(w => { const xs = acts.filter(x => x.phase === w); return xs.length ? `<div class="post"><b>${WAVE[w][0].toUpperCase() + WAVE[w].slice(1)}</b>${xs.map(x => `<div class="small">${who(x.i, m)}: ${x.refused ? `<span style="color:var(--bad)">среда отказала: ${esc(x.refused)}</span>` : esc(act(x.a))}</div>`).join("")}</div>` : ""; }).join("") || `<div class="muted">Журнал действий есть только в запусках новой записи.</div>`)
     : (thoughts.map(c => `<div class="post">${who(c.i, m)} <span class="muted small">${WAVE[c.phase]}</span><div>${esc(c.thought)}</div></div>`).join("") || `<div class="muted">Мысли записываются только у жителей на модели, в запусках новой записи.</div>`);
   if (tab === "feed" && posts.length) tabs.push(["open", "Лента на весь экран"]);
   return `<div class="card"><div class="muted small">Месяц ${m.month} <span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${vtag(b)}</div>
@@ -357,6 +358,25 @@ function chatsScene(key) {  // все личные разговоры запус
   const sel = pairs[key] ? key : list[0][0], [a, b] = sel.split("-").map(Number);
   return runHead("chats") + `<div class="card"><div class="chat"><div style="max-height:640px;overflow:auto">${list.map(([k, n]) => { const [x, y] = k.split("-").map(Number); return `<div class="chatitem ${k === sel ? "on" : ""}" data-pair="${k}"><b>${who(x, null, true)} и ${who(y, null, true)}</b> <span class="muted small">${n}</span></div>`; }).join("")}</div>
     <div class="chatbody"><div class="small muted"><a href="#/run/${S.recId}/person/${a}">${esc(P(a).name)}</a> и <a href="#/run/${S.recId}/person/${b}">${esc(P(b).name)}</a>; реплики первого справа</div>${chatView(a, b)}</div></div></div>`;
+}
+
+/* ---------- сцена: выборы совета ---------- */
+function electionsScene() {
+  const r = S.rec, race = r.race;
+  const live = race ? `<div class="card"><h2>Идут выборы перед месяцем ${race.before_month}: ${WAVE[race.stage]}</h2>
+      <div class="muted small">Выдвинулись: ${race.candidates.map(c => who(c.id)).join(", ") || "пока никто"}. Проголосовали: ${race.voted}.</div>
+      ${race.candidates.map(c => `<div class="post"><b>${who(c.id)}</b> <span class="muted small">округ ${P(c.id).district + 1}</span><div>${esc(c.program) || `<span class="muted">программы нет</span>`}</div></div>`).join("")}
+      ${race.statements.map(x => `<div class="comment"><b>${esc(P(x.author).name)}</b> <span class="muted small">округ ${x.district + 1} · ${WAVE[x.stage]}${x.candidate ? " · кандидат" : ""}</span><div>${esc(x.text)}</div></div>`).join("")}</div>` : "";
+  const done = r.elections.map(e => `<h3>Выборы перед месяцем ${e.before_month} · проголосовали ${pct(e.turnout)} жителей</h3><div class="grid g2" style="align-items:start">` + e.districts.map(d => {
+    const said = e.statements.filter(x => x.district === d.district), total = d.candidates.reduce((a, c) => a + c.votes, 0);
+    return `<div class="card"><h2>Округ ${d.district + 1}</h2><div class="muted small">Жители: ${d.residents.map(i => who(i)).join(", ")}</div>
+      ${d.candidates.map(c => `<div class="post"><b>${who(c.id)}</b> ${c.id === d.winner ? `<span class="tag good">избран</span>` : ""}${e.incumbents.includes(c.id) ? `<span class="tag">был в совете</span>` : ""}
+          <span class="muted small">голосов ${c.votes} из ${total}${d.runoff ? `, во втором туре ${d.runoff[c.id] ?? "не участвовал"}` : ""}</span>
+          <div class="bar"><i style="width:${total ? c.votes / total * 100 : 0}%;background:${c.id === d.winner ? "var(--good)" : "#b9b3a6"}"></i></div>
+          <div class="small">${esc(c.program) || `<span class="muted">программы нет</span>`}</div></div>`).join("") || `<div class="muted" style="margin-top:8px">Никто не выдвинулся.</div>`}
+      ${d.by_lot ? `<div style="margin-top:8px"><span class="tag acc">место по жребию</span> ${who(d.winner)}</div>` : ""}
+      ${said.length ? `<details><summary>Кампания и дебаты в округе · ${said.length}</summary>${said.map(x => `<div class="comment"><b>${esc(P(x.author).name)}</b> <span class="muted small">${WAVE[x.stage]}${x.candidate ? " · кандидат" : ""}</span><div>${esc(x.text)}</div></div>`).join("")}</details>` : ""}</div>`; }).join("") + `</div>`).join("");
+  return runHead("elections") + `<div class="note">Город разделён на округа, от каждого один член совета на ${r.config.council_term} месяцев. Раунд выборов: выдвижение с программой, кампания, дебаты, голосование; если ни у кого в округе нет больше половины голосов, двое первых идут во второй тур. Член совета получает ${num(r.config.salary)} $ в месяц из фонда и тратит на совет ${r.config.council_hours} часов.</div>` + live + (done || (race ? "" : `<div class="empty">Выборов в этом запуске не было.</div>`));
 }
 
 /* ---------- зал тех, кто решает ---------- */
@@ -433,7 +453,7 @@ function line(series, labels, w = 520, h = 150) {
     ${labels.map((l, k) => `<text x="${x(k) - 4}" y="${h - 6}">${l}</text>`).join("")}${series.map(s => `<polyline fill="none" stroke="${s.color}" stroke-width="2" points="${s.values.map((v, k) => x(k) + "," + y(v)).join(" ")}"/>${s.values.map((v, k) => `<circle cx="${x(k)}" cy="${y(v)}" r="3" fill="${s.color}"/>`).join("")}`).join("")}</svg>`;
 }
 const nameOf = j => S.rec.people[j]?.name ?? j;
-const ACT = {hall:a => `реплика в зале: «${a.text}»`, plan:a => `план: лента ${a.feed_hours} ч, близкие ${a.people_hours} ч${a.hall_hours ? ", зал " + a.hall_hours + " ч" : ""}${a.study_law ? ", заказал расчёт закона" : ""}${a.run_for_council ? ", выдвинулся в совет" : ""}`, post:a => `запись: «${a.text}»`, comment:a => `комментарий к записи №${a.post_id}: «${a.text}»`,
+const ACT = {nominate:a => `выдвинулся в совет: «${a.program}»`, campaign:a => `сказал в кампании: «${a.text}»`, hall:a => `реплика в зале: «${a.text}»`, plan:a => `план: лента ${a.feed_hours} ч, близкие ${a.people_hours} ч${a.hall_hours ? ", зал " + a.hall_hours + " ч" : ""}${a.study_law ? ", заказал расчёт закона" : ""}${a.run_for_council ? ", выдвинулся в совет" : ""}`, post:a => `запись: «${a.text}»`, comment:a => `комментарий к записи №${a.post_id}: «${a.text}»`,
   follow:a => `подписался на ${nameOf(a.person_id)}`, message:a => `письмо ${nameOf(a.to_id)}: «${a.text}»`, transfer:a => `перевёл ${a.amount} монет ${nameOf(a.to_id)}${a.note ? ` («${a.note}»)` : ""}`,
   vote:a => `голос: ${CHOICE[a.choice] || a.choice}`, vote_candidate:a => `голос на выборах совета за ${nameOf(a.candidate_id)}`, delegate:a => a.to_id < 0 ? "забрал свой голос назад" : `передал голос ${nameOf(a.to_id)}`, remember:a => `заметка для себя: «${a.text}»`};
 const act = a => ACT[a.type] ? ACT[a.type](a) : a.type;
@@ -467,7 +487,7 @@ function personScene(i) {
       <div class="card"><h2>По месяцам</h2><table><tr><th>Месяц</th><th>Закон</th><th class="n">Деньги</th><th class="n">За месяц</th><th class="n">Получил</th><th class="n">Отдал</th><th class="n">Лента, ч</th><th class="n">Близкие, ч</th><th class="n">Расчёт, ч</th><th class="n">Записи и письма, ч</th><th>Мнение</th><th>Голос</th></tr>${rows}</table></div>`;
   } else if (tab === "timeline") {
     body = all.map(m => { const s = lawState(m, i), h = m.hours[i];
-      const waves = WAVES.map((w, wi) => { const c = calls.find(x => x.month === m.month && x.phase === w), got = r.messages.filter(x => x.to === i && x.month === m.month && x.phase === wi), paid = r.transfers.filter(x => x.to === i && x.month === m.month && x.phase === wi);
+      const waves = ALLWAVES.map(w => { const wi = WAVES.indexOf(w), c = calls.find(x => x.month === m.month && x.phase === w), got = r.messages.filter(x => x.to === i && x.month === m.month && x.phase === wi), paid = r.transfers.filter(x => x.to === i && x.month === m.month && x.phase === wi);
         if (!c && !got.length && !paid.length) return "";
         return `<div class="wave"><div class="w">${WAVE[w]}</div>${c?.thought ? `<div class="thought">«${esc(c.thought)}»</div>` : ""}${(c?.actions || []).map(a => `<div>• ${esc(act(a))}</div>`).join("")}${c && !c.actions.length ? `<div class="muted small">ничего не сделал</div>` : ""}
           ${(c?.refused || []).length ? `<div class="small" style="color:var(--bad)">среда отказала: ${esc(c.refused.join("; "))}</div>` : ""}
@@ -614,7 +634,7 @@ async function route() {
     } else if (parts[0] === "run") {
       await loadRec(parts[1]);
       const tab = parts[2] || "months";
-      html = tab === "law" ? lawScene(+parts[3]) : tab === "person" ? personScene(+parts[3]) : tab === "people" ? peopleScene() : tab === "totals" ? totalsScene() : tab === "cost" ? costScene() : tab === "chats" ? chatsScene(parts[3]) : monthsScene();
+      html = tab === "law" ? lawScene(+parts[3]) : tab === "person" ? personScene(+parts[3]) : tab === "people" ? peopleScene() : tab === "totals" ? totalsScene() : tab === "cost" ? costScene() : tab === "chats" ? chatsScene(parts[3]) : tab === "elections" ? electionsScene() : monthsScene();
     } else if (parts[0] === "compare") { (q.get("ids") || "").split(",").filter(Boolean).forEach(id => S.picked.add(id)); html = compareScene(); }
     else html = parts[0] === "checks" ? CHECKS : HOW;
   } catch (e) { html = `<div class="empty">Не получилось открыть: ${esc(e.message)}. <a href="#/">К запускам</a></div>`; }

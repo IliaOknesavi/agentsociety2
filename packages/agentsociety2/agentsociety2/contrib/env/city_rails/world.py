@@ -21,6 +21,7 @@ from pathlib import Path
 FORMS = {"direct": "Прямое голосование", "liquid": "Прямое с делегированием", "council": "Выборный совет", "lottery": "Совет по жребию"}
 EVERYONE = ("direct", "liquid")  # формы, где право решать у всех жителей
 PHASES = ("plan", "talk", "decide")
+RACE = ("nominate", "campaign", "debate", "vote", "runoff")  # раунд выборов совета: выдвижение, кампания, дебаты, голосование, второй тур
 COST = {"post": 0.5, "comment": 0.25, "message": 0.25, "study": 4.0, "vote": 0.5, "hall": 0.25}  # часы на одно занятие
 
 # занятие: по-английски для промпта, по-русски для экрана, доход в месяц, свободные часы, владеет ли мастерской
@@ -120,6 +121,9 @@ class Config:
     seed: int = 1
     threshold: float = 0.5  # доля «за» среди отданных голосов, выше которой закон принят
     term: int = 3  # на сколько месяцев выпадает жребий
+    council_term: int = 6  # на сколько месяцев избирается совет; перед каждым сроком идёт раунд выборов
+    salary: int = 1500  # зарплата члена совета в месяц из фонда: правило города, сам совет её не назначает
+    council_hours: int = 10  # сколько часов в месяц член совета тратит на работу в совете
     tax: float = 0.10
     fund_return: float = 0.02
     dividend_rate: float = 0.03
@@ -143,7 +147,7 @@ class Economy:
         self.cfg, self.wages, self.savings, self.owners = cfg, list(wages), list(savings), list(owners)
         self.fund = float(cfg.fund_per_head * len(wages))
         self.tax, self.tax_extra, self.tax_extra_left, self.holiday = cfg.tax, 0.0, 0, 0
-        self.fee, self.manager, self.support, self.decider_pay = 0.0, None, 0, 0
+        self.fee, self.manager, self.support, self.decider_pay, self.salary = 0.0, None, 0, 0, 0
         self.living, self.ret, self.audit_fee = float(cfg.subsistence), cfg.fund_return, 0
         self.last: dict = {}
 
@@ -192,8 +196,8 @@ class Economy:
             pay = min(self.support, self.fund)
             self.fund -= pay
             self.savings[i] += pay
-        for i in (deciders if self.decider_pay else []):
-            pay = min(self.decider_pay, self.fund)
+        for i in (deciders if self.decider_pay or self.salary else []):
+            pay = min(self.decider_pay + self.salary, self.fund)
             self.fund -= pay
             self.savings[i] += pay
         dividend = self.fund * self.cfg.dividend_rate / n
@@ -238,7 +242,8 @@ class City:
                     + (f".\n{t['profile']}" if t.get("profile") else f". In an earlier study this person was given $5 to split with a stranger and kept ${t['kept']}" if t["kept"] is not None else ""))
             self.people.append({
                 "id": i, "name": name, "age": t["age"], "job": en, "job_ru": ru, "temper": "", "temper_ru": f"{VIEWS[t['views']]}, {t['party']}",
-                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "keen": i in keen, "kept": t["kept"], "desc": desc, "twin": t["pid"],
+                "wage": wage, "free": free, "owner": owner, "villain": i in villains, "kept": t["kept"], "desc": desc, "twin": t["pid"],
+                "keen": t["drive"] >= 6 if "drive" in t else i in keen, "firm": t.get("strong", 0) >= 8, "drive": t.get("drive"),
                 "family_ru": f"{MARITAL.get(t['marital'], 'семейное положение не названо')}, в доме живёт {t['household'].lower().replace('more than 4', 'больше 4')} чел.",
                 "interest": round(rng.betavariate(2, 3), 2), "patience": round(rng.uniform(0.15, 0.85), 2),
                 "social": round(rng.betavariate(2, 2), 2), "start_savings": round(wage * rng.choice([-2, -0.5, 0.5, 1, 2, 4, 8]) * (3 if owner else 1)),
@@ -266,7 +271,12 @@ class City:
         self.everyone = c.form in EVERYONE
         self.deciders: list[int] = list(range(n)) if self.everyone else []
         self.delegate: dict[int, int] = {}  # отзывное делегирование: кому житель передал свой голос
-        self.election: dict | None = {"candidates": [], "votes": {}} if c.form == "council" else None
+        self.election = None  # прежние выборы внутри первого месяца заменены отдельным раундом, см. race
+        self.race: dict | None = None
+        self.elections: list[dict] = []
+        order = random.Random(f"{c.seed}/districts").sample(range(n), n)  # округа: от каждого один член совета
+        self.district = {i: k % self.seats for k, i in enumerate(order)} if c.form == "council" else {}
+        self.eco.salary = c.salary if c.form in ("council", "lottery") else 0
         self.posts: list[dict] = []
         self.hall: list[dict] = []  # реплики в зале тех, кто решает
         self.transfers: list[dict] = []
@@ -280,6 +290,8 @@ class City:
         self._outcomes: dict = {}
         self.source = "мир без жителей"
         self._open_month()
+        if c.form == "council":
+            self._start_race()
 
     # ---------- ход времени ----------
     def _open_month(self) -> None:
@@ -329,9 +341,10 @@ class City:
         """Закрыть волну. После третьей волны: подсчёт голосов, закон, деньги месяца, следующий месяц."""
         if self.done:
             return
+        if self.race:
+            self._advance_race()
+            return
         name = PHASES[self.phase]
-        if name == "talk" and self.election is not None:
-            self._close_election()
         if name != "decide":
             self.phase += 1
             return
@@ -364,6 +377,112 @@ class City:
             self.done = True
         else:
             self._open_month()
+            if self.cfg.form == "council" and (self.month - 1) % self.cfg.council_term == 0:
+                self._start_race()
+
+    # ---------- раунд выборов совета ----------
+    def wave(self) -> str:
+        return self.race["stage"] if self.race else PHASES[self.phase]
+
+    def _start_race(self) -> None:
+        self.race = {"stage": "nominate", "before_month": self.month, "candidates": {}, "statements": [], "votes": {}, "votes2": {},
+                     "runoff": {}, "incumbents": list(self.deciders)}
+
+    def _advance_race(self) -> None:
+        """Следующий этап выборов. После голосования: победитель в округе тот, у кого больше половины голосов; иначе второй тур двоих."""
+        race, n = self.race, self.cfg.residents
+        if race["stage"] in ("nominate", "campaign", "debate"):
+            race["stage"] = RACE[RACE.index(race["stage"]) + 1]
+            return
+        rng, winners, table = random.Random(f"{self.cfg.seed}/race/{self.month}"), {}, []
+        for d in range(self.seats):
+            people = [i for i in range(n) if self.district[i] == d]
+            cands = [c for c in race["candidates"] if self.district[c] == d]
+            first = {c: sum(v == c for v in race["votes"].values()) for c in cands}
+            row = {"district": d, "residents": people, "candidates": [{"id": c, "program": race["candidates"][c]["program"], "votes": first[c]} for c in cands]}
+            if race["stage"] == "vote":
+                top = sorted(cands, key=lambda c: (-first[c], rng.random()))
+                if not cands:
+                    winners[d], row["by_lot"] = rng.choice(people), True  # в округе никто не выдвинулся: место по жребию
+                elif len(cands) <= 2 or first[top[0]] * 2 > sum(first.values()):
+                    winners[d] = top[0]
+                else:
+                    race["runoff"][d] = top[:2]
+            else:
+                pair = race["runoff"].get(d)
+                if pair:
+                    second = {c: sum(v == c for v in race["votes2"].values()) for c in pair}
+                    winners[d] = sorted(pair, key=lambda c: (-second[c], -first[c], rng.random()))[0]
+                    row["runoff"] = second
+                else:
+                    winners[d] = race["winners"][d]
+                    row["by_lot"] = race["lots"].get(d, False)
+            table.append(row)
+        if race["stage"] == "vote":
+            race["winners"], race["lots"] = winners, {r["district"]: r.get("by_lot", False) for r in table}
+            if race["runoff"]:
+                race["stage"] = "runoff"
+                return
+        for row in table:
+            row["winner"] = winners[row["district"]]
+        self.deciders = sorted(winners.values())
+        self.elections.append({"before_month": race["before_month"], "districts": table, "statements": race["statements"],
+                               "turnout": round(len(race["votes"]) / n, 2), "elected": self.deciders, "incumbents": race["incumbents"]})
+        self.cur["deciders"], self.cur["election"] = list(self.deciders), {"elected": self.deciders, "candidates": sorted(race["candidates"]), "count": {}}
+        self.race = None
+
+    def _life(self, i: int) -> str:
+        """Событие жизни жителя в этом месяце: смены только у работающих по найму, школа только у тех, кто моложе 50."""
+        p = self.people[i]
+        fits = [x for x in LIFE if ("shifts" not in x or (p["free"] == 150 and not p["owner"]))
+                and ("child started school" not in x or str(p["age"])[:2] in ("18", "30") or (isinstance(p["age"], int) and p["age"] < 50))]
+        return random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(fits)
+
+    def _race_view(self, i: int) -> dict:
+        """Что житель видит в раунде выборов: свой округ, кандидатов с программами, что они говорили и как голосовали раньше."""
+        p, race, d = self.people[i], self.race, self.district[i]
+        mates = [q for q in self.people if self.district[q["id"]] == d]
+        record = lambda c: [{"law": m["bill"]["title"], "vote": m["votes"].get(c, "did not vote")} for m in self.months[-4:] if c in m["deciders"]]
+        cands = [{"id": c, "name": self.people[c]["name"], "job": self.people[c]["job"], "program": v["program"], "incumbent": c in race["incumbents"],
+                  "record": record(c), "said": [x["text"] for x in race["statements"] if x["author"] == c][-3:]}
+                 for c, v in race["candidates"].items() if self.district[c] == d]
+        pair = race["runoff"].get(d)
+        return {
+            "month": self.month, "months": self.cfg.months, "phase": race["stage"], "form": self.cfg.form, "idle": race["stage"] == "runoff" and not pair,
+            "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]), "free_hours": p["free"],
+                   "hours_left": round(p["free"] - self.spent[i], 2), "role": self.role(i), "can_vote": False},
+            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund)},
+            "race": {"stage": race["stage"], "district": d + 1, "districts": self.seats, "neighbours": [{"id": q["id"], "name": q["name"], "job": q["job"]} for q in mates if q["id"] != i],
+                     "salary": self.cfg.salary, "council_hours": self.cfg.council_hours, "term": self.cfg.council_term, "candidates": cands,
+                     "running": i in race["candidates"], "runoff": pair,
+                     "questions": [{"author": self.people[x["author"]]["name"], "text": x["text"]} for x in race["statements"] if self.district[x["author"]] == d and x["author"] not in race["candidates"]][-6:]},
+            "inbox": [{"from_id": m["from"], "from": self.people[m["from"]]["name"], "text": m["text"]} for m in self.messages if m["to"] == i and m["month"] == self.month][-4:],
+            "money_in": [{"from_id": t["from"], "from": self.people[t["from"]]["name"], "amount": t["amount"], "note": t["note"]} for t in self.transfers if t["to"] == i and t["month"] == self.month],
+            "memory": list(self.notes[i]), "life": self._life(i),
+        }
+
+    def _race_act(self, i: int, a: dict) -> str | None:
+        kind, race = a["type"], self.race
+        if kind == "nominate":
+            if race["stage"] != "nominate":
+                return "выдвижение закончилось"
+            race["candidates"][i] = {"program": str(a.get("program", "")).strip()[:700]}
+            self._event(i, "candidate")
+        elif kind == "campaign":
+            if race["stage"] not in ("campaign", "debate") or not str(a.get("text", "")).strip() or not self._spend(i, COST["comment"]):
+                return "сейчас не кампания, нет текста или часов"
+            race["statements"].append({"author": i, "text": str(a["text"]).strip()[:500], "stage": race["stage"], "district": self.district[i], "candidate": i in race["candidates"]})
+        elif kind == "vote_candidate":
+            c, pair = int(a["candidate_id"]), race["runoff"].get(self.district[i])
+            if race["stage"] == "vote" and c in race["candidates"] and self.district[c] == self.district[i] and i not in race["votes"]:
+                race["votes"][i] = c
+            elif race["stage"] == "runoff" and pair and c in pair and i not in race["votes2"]:
+                race["votes2"][i] = c
+            else:
+                return "за этого кандидата сейчас голосовать нельзя"
+        else:
+            return self._act(i, a) if kind in ("thought", "usage", "remember", "message", "transfer", "follow", "model_error") else "в раунде выборов этого действия нет"
+        return None
 
     def _close_election(self) -> None:
         votes, n = self.election["votes"], self.cfg.residents
@@ -390,8 +509,11 @@ class City:
 
     def view(self, i: int) -> dict:
         """Всё, что житель видит в этой волне. Повторный вызов в той же волне отдаёт тот же ответ и не добавляет просмотров."""
-        key = (i, self.month, self.phase)
+        key = (i, self.month, self.wave())
         if key in self._views:
+            return self._views[key]
+        if self.race:
+            self._views[key] = self._race_view(i)
             return self._views[key]
         p, cur, bill, phase = self.people[i], self.cur, self.cur["bill"], PHASES[self.phase]
         feed_hours = cur["plans"].get(i, {}).get("feed_hours", 0 if self.phase else p["free"] * 0.1)
@@ -429,7 +551,7 @@ class City:
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]),
                    "free_hours": p["free"], "hours_left": round(p["free"] - self.spent[i], 2),
                    "role": self.role(i), "can_vote": i in self.deciders and self.election is None},
-            "town": {"hall": self.cfg.hall, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
+            "town": {"hall": self.cfg.hall, "bulletin": self.cfg.bulletin, "residents": self.cfg.residents, "fund": round(self.eco.fund), "tax": self.eco.last.get("tax", self.cfg.tax),
                      "dividend": self.eco.last.get("dividend"), "deciders": [self.people[d]["name"] for d in self.deciders] if not self.everyone else "all residents"},
             "last_month": ({"law": self.months[-1]["bill"]["title"], "passed": self.months[-1]["passed"], "tally": self.months[-1]["tally"]} if self.months else None),
             "bill": {"title": bill["title"], "pitch": bill["pitch"], "terms": bill["terms"], "analysis": bill["analysis"] if i in cur["studied"] or self.cfg.bulletin else None,
@@ -440,8 +562,7 @@ class City:
             "memory": list(self.notes[i]),
             "delegation": ({"to_id": self.delegate.get(i), "to": self.people[self.delegate[i]]["name"] if i in self.delegate else None,
                             "held": sum(d == i for d in self.delegate.values())} if self.cfg.form == "liquid" else None),
-            "life": random.Random(f"{self.cfg.seed}/{i}/{self.month}").choice(
-                [x for x in LIFE if ("shifts" not in x or (p["free"] == 150 and not p["owner"])) and ("child started school" not in x or str(p["age"])[:2] in ("18", "30") or (isinstance(p["age"], int) and p["age"] < 50))]),
+            "life": self._life(i),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "inbox": threads,
@@ -466,8 +587,8 @@ class City:
     def _entry(self, i: int) -> dict:
         """Запись о ходе жителя в текущей волне."""
         log = self.calls[i]
-        if not log or (log[-1]["month"], log[-1]["phase"]) != (self.month, PHASES[self.phase]):
-            log.append({"month": self.month, "phase": PHASES[self.phase], "prompt": None, "thought": None, "actions": [], "refused": [], "usage": None})
+        if not log or (log[-1]["month"], log[-1]["phase"]) != (self.month, self.wave()):
+            log.append({"month": self.month, "phase": self.wave(), "prompt": None, "thought": None, "actions": [], "refused": [], "usage": None})
         return log[-1]
 
     def note_prompt(self, i: int, user: str, system: str) -> None:
@@ -478,13 +599,13 @@ class City:
     # ---------- что житель делает ----------
     def submit(self, i: int, actions: list[dict]) -> dict:
         """Действия жителя за волну. Повторный вызов в той же волне ничего не меняет и отдаёт прежний итог."""
-        key = (i, self.month, self.phase)
+        key = (i, self.month, self.wave())
         if key in self._outcomes:
             return self._outcomes[key]
         done, refused = [], []
         for a in actions or []:
             try:
-                note = self._act(i, dict(a))
+                note = self._race_act(i, dict(a)) if self.race else self._act(i, dict(a))
                 (done if note is None else refused).append(a.get("type") if note is None else f"{a.get('type')}: {note}")
             except (KeyError, ValueError, TypeError) as exc:
                 refused.append(f"{a.get('type')}: {exc}")
@@ -502,7 +623,7 @@ class City:
         return True
 
     def _event(self, i: int, kind: str, **more) -> None:
-        self.cur["events"].append({"phase": PHASES[self.phase], "who": i, "kind": kind, **more})
+        self.cur["events"].append({"phase": self.wave(), "who": i, "kind": kind, **more})
 
     def _act(self, i: int, a: dict) -> str | None:
         kind, cur, n = a["type"], self.cur, self.cfg.residents
@@ -528,13 +649,14 @@ class City:
             study = bool(a.get("study_law"))
             in_hall = self.cfg.hall and i in self.deciders and self.election is None  # часы зала есть только у тех, кто решает
             hall = max(0, int(a.get("hall_hours", 0))) if in_hall else 0
-            fixed = people + (COST["study"] if study else 0)
+            duty = self.cfg.council_hours if i in self.deciders and not self.everyone else 0  # часы члена совета на работу в совете
+            fixed = people + duty + (COST["study"] if study else 0)
             if feed + hall + fixed > free:
                 hall = max(0, min(hall, int(free - fixed)))
                 feed = max(0, int(free - fixed - hall))
             self.spent[i] += feed + hall + fixed
             cur["plans"][i] = {"feed_hours": feed, "people_hours": people, "study": study, "hall_hours": hall}
-            cur["hours"][i] = {"feed": feed, "people": people, "study": COST["study"] if study else 0, "public": 0.0, "hall": hall}
+            cur["hours"][i] = {"feed": feed, "people": people, "study": COST["study"] if study else 0, "public": 0.0, "hall": hall, "council": duty}
             if study:
                 cur["studied"].append(i)
             if a.get("run_for_council") and self.election is not None and i not in self.election["candidates"]:
@@ -675,7 +797,7 @@ class City:
         people = [dict(p, money=round(self.eco.savings[p["id"]]), views=views.get(p["id"], 0),
                        followers=sum(p["id"] in f for f in self.follows.values()),
                        posts=sum(q["author"] == p["id"] for q in self.posts),
-                       decided_months=sum(p["id"] in m["deciders"] for m in months), notes=self.notes[p["id"]],
+                       decided_months=sum(p["id"] in m["deciders"] for m in months), notes=self.notes[p["id"]], district=self.district.get(p["id"]),
                        follows=sorted(self.follows[p["id"]]), calls=self.calls[p["id"]]) for p in self.people]
         # цена прогона: расход вызовов модели по месяцам, волнам и жителям
         blank = lambda: {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "seconds": 0.0, "cost_usd": 0.0}
@@ -689,14 +811,18 @@ class City:
                             bucket[k] = round(bucket[k] + v, 4)
         clean = lambda q: dict({k: v for k, v in q.items() if k not in ("seen", "jitter")}, viewers=sorted(q["seen"]))  # кто прочёл запись
         return {"config": asdict(self.cfg), "form_name": FORMS[self.cfg.form], "seats": self.seats, "source": self.source,
-                "done": self.done, "month": self.month, "phase": PHASES[self.phase], "people": people, "months": months,
+                "done": self.done, "month": self.month, "phase": self.wave(), "people": people, "months": months,
+                "elections": self.elections, "districts": self.seats if self.district else 0,
+                "race": dict(self.race, candidates=[{"id": k, "program": v["program"]} for k, v in self.race["candidates"].items()],
+                             voted=len(self.race["votes"])) if self.race else None,
                 "current": None if self.done else self.cur,
                 "posts": [clean(q) for q in self.posts], "hall": [clean(x) for x in self.hall], "transfers": self.transfers, "messages": self.messages, "metrics": metrics, "cost": cost}
 
 
 def describe(p: dict) -> str:
     """Описание жителя для промпта. У жителя из опроса это его собственные ответы; достаток словами не называется."""
-    keen = " Would like to have a say in how the town is run." if p.get("keen") else ""
+    keen = (" By their own ratings, influence, power and ambition matter to this person: they like to lead and to have a say." if p.get("keen") else "") + (
+        " Holds firm positions on most political questions and is ready to argue for them." if p.get("firm") else "")
     if p.get("desc"):
         return p["desc"] + keen
     return (f"{p['name']}, {p['age']}, {p['job']}, {p['temper']}. In an earlier study this person was given $10 "
@@ -705,6 +831,14 @@ def describe(p: dict) -> str:
 
 def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
     """Житель по простым правилам, без модели. Нужен, чтобы проверять мир и показывать экран; выводов по нему не делается."""
+    if view.get("race"):
+        race, stage = view["race"], view["phase"]
+        if stage == "nominate":
+            return [{"type": "nominate", "program": "Буду считать каждый доллар фонда и отчитываться перед округом."}] if p.get("keen") or rng.random() < 0.12 else []
+        if stage in ("campaign", "debate"):
+            return [{"type": "campaign", "text": "Мой округ получит отчёт о каждом моём голосе." if race["running"] else "Как вы будете голосовать по тратам фонда?"}] if race["running"] or rng.random() < 0.2 else []
+        pool = race["runoff"] or [c["id"] for c in race["candidates"]]
+        return [{"type": "vote_candidate", "candidate_id": rng.choice(pool)}] if pool and rng.random() < 0.7 else []
     phase, bill, me = view["phase"], view["bill"], view["me"]
     actions: list[dict] = []
     decider = me["can_vote"] and view["form"] not in EVERYONE
@@ -778,6 +912,8 @@ def run_scripted(cfg: Config | dict | None = None) -> dict:
 if __name__ == "__main__":  # самопроверка: деньги сходятся, формы власти дают решающих, повтор действий безвреден
     for form in FORMS:
         c = City({"form": form, "residents": 20, "months": 6, "seed": 3})
+        while c.race:  # в форме с советом сначала идёт раунд выборов
+            c.advance()
         before = sum(c.eco.savings) + c.eco.fund
         assert c.submit(0, [{"type": "plan", "feed_hours": 20, "people_hours": 10, "study_law": True}])["done"] == ["plan"]
         assert c.submit(0, [{"type": "post", "text": "x"}])["done"] == ["plan"], "повтор в той же волне не должен действовать"
@@ -790,5 +926,6 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form in EVERYONE else 5) for x in r["months"]), form
         assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
         assert all(sum(x["opinion_tally"].values()) == 20 for x in r["months"]) and m["majority_match"] is not None
+        assert form != "council" or (r["elections"] and all(len(e["elected"]) == 5 for e in r["elections"]) and len(r["elections"]) == 1), "совет избирается по округам"
         assert r["hall"] and all(set(x["viewers"]) <= set(r["months"][x["month"] - 1]["deciders"]) for x in r["hall"]), "зал читают только те, кто решает"
         print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному на руки {m['gain']:+} $, фонд на жителя {m['gain_fund']:+} $, записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")

@@ -56,10 +56,13 @@ async def main() -> None:
         agent_class_name="ResidentAgent", env_router=env_router, start_t=datetime.now(), run_dir=run_dir, enable_replay=True)
     await society.init()
     started = time.perf_counter()
-    for month in range(1, a.months + 1):
-        for wave in ("план", "обсуждение", "решение"):
-            await society.step(tick=1)
-            print(f"месяц {month}, волна «{wave}» пройдена, {time.perf_counter() - started:.0f} с", flush=True)
+    import json
+    for _ in range(a.months * 3 + 12 * (a.months // 6 + 1)):  # волн в прогоне заранее не известно: перед сроком совета идёт раунд выборов
+        await society.step(tick=1)
+        state = json.loads(record.read_text(encoding="utf-8"))
+        print(f"месяц {state['month']}, дальше «{state['phase']}», {time.perf_counter() - started:.0f} с", flush=True)
+        if state["done"]:
+            break
     tokens = society.all_token_stats()
     print("TOKENS", tokens)
     await society.close()
