@@ -14,6 +14,7 @@ from agentsociety2.env import EnvBase, tool
 from agentsociety2.storage import ColumnDef
 from agentsociety2.storage.workspace_state import atomic_write_text
 
+from . import resident
 from .world import City, Config
 
 
@@ -76,7 +77,11 @@ class CityRailsEnv(EnvBase):
         async with self._lock:
             if self.city.done:
                 return {"over": True}
-            return self.city.view(int(agent_id) - 1)
+            i = int(agent_id) - 1
+            view = self.city.view(i)
+            if not view["idle"]:  # то, что модель получит на вход, остаётся в записи прогона
+                self.city.note_prompt(i, resident.user_prompt(view), resident.system_prompt(self.city.people[i], view))
+            return view
 
     @tool(readonly=False)
     async def submit_actions(self, agent_id: int, actions: list[dict]) -> dict:

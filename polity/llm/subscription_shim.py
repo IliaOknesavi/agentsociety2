@@ -502,6 +502,7 @@ def complete(body: dict) -> dict:
             "completion_tokens": completion_tokens,
             "total_tokens": prompt_tokens + completion_tokens,
             "prompt_tokens_details": {"cached_tokens": cached_tokens},
+            "cost_usd": float(data.get("total_cost_usd") or 0.0),  # по ценам API; нужен приложению для расчёта цены прогона
         },
     }
     cache_put(key, response)

@@ -59,8 +59,19 @@ async def main() -> None:
         for wave in ("план", "обсуждение", "решение"):
             await society.step(tick=1)
             print(f"месяц {month}, волна «{wave}» пройдена, {time.perf_counter() - started:.0f} с", flush=True)
-    print("TOKENS", society.all_token_stats())
+    tokens = society.all_token_stats()
+    print("TOKENS", tokens)
     await society.close()
+    # полный расход прогона, включая переводы запросов маршрутизатором: приложение показывает его рядом с расходом жителей
+    try:
+        import json
+        import urllib.request
+        url = os.getenv("AGENTSOCIETY_LLM_API_BASE", "").replace("/v1", "/stats")
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(url, timeout=5) as response:
+            shim = json.loads(response.read())
+    except Exception:
+        shim = {}
+    record.with_suffix(".cost.json").write_text(json.dumps({"tokens": tokens, "shim": shim, "wall_seconds": round(time.perf_counter() - started), "model": model}, ensure_ascii=False), encoding="utf-8")
     print(f"RECORD {record}")
 
 

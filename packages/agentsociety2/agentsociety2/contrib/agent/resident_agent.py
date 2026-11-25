@@ -6,6 +6,7 @@
 """
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -71,16 +72,20 @@ class ResidentAgent(AgentBase):
         if view.get("over") or view.get("idle"):
             return f"[{self.name}] нет хода"
         tools = resident.tools(view)
+        started = time.time()
         try:
             response = await self.acompletion(
                 [{"role": "system", "content": resident.system_prompt(self._profile, view)},
                  {"role": "user", "content": resident.user_prompt(view)}],
                 stream=False, tools=tools, tool_choice="auto", max_retries=2, max_delay=20.0)
             actions = resident.parse(getattr(response.choices[0].message, "tool_calls", None))
+            usage = getattr(response, "usage", None)
+            details = getattr(usage, "prompt_tokens_details", None)
+            actions.append({"type": "usage", "prompt_tokens": getattr(usage, "prompt_tokens", 0), "completion_tokens": getattr(usage, "completion_tokens", 0),
+                            "cached_tokens": getattr(details, "cached_tokens", 0) if details else 0,
+                            "cost_usd": getattr(usage, "cost_usd", 0) or 0, "seconds": round(time.time() - started, 2)})
         except Exception as exc:  # отказ модели не роняет прогон, но остаётся в записи
             actions = [{"type": "model_error", "note": f"{type(exc).__name__}: {exc}"[:200]}]
-        if not actions:
-            return f"[{self.name}] ничего не сделал"
         results, answer = await self.ask_env({"variables": {"actions": actions}}, SUBMIT, readonly=False, template_mode=True)
         self._ensure_env_ask_ok(results, answer, op="submit_actions")
         return f"[{self.name}] действий: {len(actions)}"

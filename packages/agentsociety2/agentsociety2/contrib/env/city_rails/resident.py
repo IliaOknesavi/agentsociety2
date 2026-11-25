@@ -91,6 +91,8 @@ def user_prompt(view: dict) -> str:
     for t in view["money_in"]:
         lines.append(f"Received {t['amount']} coins from {t['from']} (resident {t['from_id']})" + (f", note: {t['note']}" if t["note"] else ""))
     lines.append("People in town, by resident number: " + ", ".join(f"{q['id']} {q['name']} ({q['job']}{', ' + q['role'] if q['role'] else ''})" for q in view["people"]))
+    lines.append("First call private_thought with what this person really thinks right now." + (
+        " Then call private_opinion: is this person privately for the law, against it, or has no opinion." if view["phase"] == "decide" else ""))
     if view["phase"] == "plan":
         lines.append("Decide how this person splits the free hours of this month: call plan_month. They may also post, comment, message or send coins now.")
     elif view["phase"] == "talk":
@@ -109,7 +111,10 @@ def _fn(name: str, description: str, properties: dict, required: list[str]) -> d
 
 def tools(view: dict) -> list[dict]:
     text, number = {"type": "string"}, {"type": "integer", "description": "resident number"}
-    out = []
+    out = [_fn("private_thought", "What this person really thinks at this moment, one or two sentences in Russian. Nobody else ever sees it. Call it first, every time.", {"text": text}, ["text"])]
+    if view["phase"] == "decide":
+        out.append(_fn("private_opinion", "What this person privately thinks of this month's law, whether or not they have a vote. Never shown to anyone. Call it every time.",
+                       {"choice": {"type": "string", "enum": ["for", "against", "none"], "description": "none: no opinion"}}, ["choice"]))
     if view["phase"] == "plan":
         props = {"feed_hours": {"type": "integer", "description": "hours for reading the feed this month"},
                  "people_hours": {"type": "integer", "description": "hours with family and friends"},
@@ -136,7 +141,7 @@ def tools(view: dict) -> list[dict]:
     return out
 
 
-RENAME = {"plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
+RENAME = {"private_thought": "thought", "private_opinion": "opinion", "plan_month": "plan", "write_post": "post", "send_message": "message", "send_coins": "transfer", "delegate_vote": "delegate"}
 
 
 def parse(tool_calls) -> list[dict]:

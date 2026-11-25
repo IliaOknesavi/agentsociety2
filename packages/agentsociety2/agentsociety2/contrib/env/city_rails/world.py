@@ -254,6 +254,7 @@ class City:
         self.messages: list[dict] = []
         self.follows: dict[int, set[int]] = {i: set() for i in range(n)}
         self.notes: dict[int, list[str]] = {i: [] for i in range(n)}  # память жителя: его заметки для себя
+        self.calls: dict[int, list[dict]] = {i: [] for i in range(n)}  # ходы жителя по волнам: что видел, думал, сделал, сколько стоил
         self.months: list[dict] = []
         self.spent: dict[int, float] = {}
         self._views: dict = {}
@@ -283,7 +284,7 @@ class City:
                f"{statistics.mean(bill['effects']['total'][i] for i in bill['beneficiaries']):+.0f}. " if bill["beneficiaries"] else "")
             + ("Для большинства жителей закон убыточен." if bill["harmful"] else "Для большинства жителей закон выгоден."))
         assert len(BILLS) == 10
-        self.cur = {"month": self.month, "bill": bill, "hours": {}, "studied": [], "votes": {}, "plans": {},
+        self.cur = {"month": self.month, "bill": bill, "hours": {}, "studied": [], "votes": {}, "plans": {}, "opinions": {},
                     "deciders": list(self.deciders), "events": []}
         self.spent = {i: 0.0 for i in range(n)}
 
@@ -326,6 +327,10 @@ class City:
         no = sum(v == "against" for v in cast)
         cur["passed"] = yes + no > 0 and yes / (yes + no) > self.cfg.threshold
         cur["tally"] = {"for": yes, "against": no, "entitled": len(self.deciders)}
+        # мнение каждого жителя, а не только решающих: так видно, совпало ли решение с волей большинства
+        want, oppose = (sum(v == x for v in cur["opinions"].values()) for x in ("for", "against"))
+        cur["opinion_tally"] = {"for": want, "against": oppose, "none": self.cfg.residents - want - oppose}
+        cur["matches_majority"] = None if want == oppose else cur["passed"] == (want > oppose)
         if cur["passed"]:
             self.eco.apply(bill["effect"], self.deciders, bill["sponsor"])
         self.eco.month(self.deciders)
@@ -413,7 +418,7 @@ class City:
                          if self.election is not None else None),
         }
         # в волнах обсуждения и решения жителю нечего делать, если он ничего не читает, не решает и ему никто не писал
-        view["idle"] = bool(self.phase and not feed and not view["me"]["can_vote"] and not view["inbox"] and not view["money_in"]
+        view["idle"] = bool(self.phase == 1 and not feed and not view["me"]["can_vote"] and not view["inbox"] and not view["money_in"]
                             and not view["election"] and not view["replies_to_me"] and i not in cur["studied"])
         self._views[key] = view
         return view
@@ -423,6 +428,18 @@ class City:
         age = (self.month - q["month"]) * 3 + (self.phase - q["phase"])
         followers = sum(q["author"] in f for f in self.follows.values())
         return -0.7 * age + 0.5 * len(q["comments"]) + 0.4 * followers + (2.0 if q["author"] in self.follows[reader] else 0.0) + q["jitter"]
+
+    def _entry(self, i: int) -> dict:
+        """Запись о ходе жителя в текущей волне."""
+        log = self.calls[i]
+        if not log or (log[-1]["month"], log[-1]["phase"]) != (self.month, PHASES[self.phase]):
+            log.append({"month": self.month, "phase": PHASES[self.phase], "prompt": None, "thought": None, "actions": [], "refused": [], "usage": None})
+        return log[-1]
+
+    def note_prompt(self, i: int, user: str, system: str) -> None:
+        """Что модель получила на вход в этой волне; системная часть у жителя одна на весь прогон."""
+        self._entry(i)["prompt"] = user
+        self.people[i]["system_prompt"] = system
 
     # ---------- что житель делает ----------
     def submit(self, i: int, actions: list[dict]) -> dict:
@@ -437,6 +454,9 @@ class City:
                 (done if note is None else refused).append(a.get("type") if note is None else f"{a.get('type')}: {note}")
             except (KeyError, ValueError, TypeError) as exc:
                 refused.append(f"{a.get('type')}: {exc}")
+        entry = self._entry(i)
+        entry["actions"] = [a for a in actions or [] if a.get("type") not in ("thought", "usage", "opinion", "model_error")]
+        entry["refused"] = refused
         out = {"status": "success", "done": done, "refused": refused, "hours_left": round(self.people[i]["free"] - self.spent[i], 2)}
         self._outcomes[key] = out
         return out
@@ -452,6 +472,17 @@ class City:
 
     def _act(self, i: int, a: dict) -> str | None:
         kind, cur, n = a["type"], self.cur, self.cfg.residents
+        if kind == "thought":  # мысль про себя: никто из жителей её не видит
+            self._entry(i)["thought"] = str(a.get("text", "")).strip()[:500]
+            return None
+        if kind == "opinion":  # тайное мнение о законе месяца, спрашивается у всех
+            if a.get("choice") not in ("for", "against", "none"):
+                return "мнение: for, against или none"
+            cur["opinions"][i] = a["choice"]
+            return None
+        if kind == "usage":  # расход вызова модели на этот ход
+            self._entry(i)["usage"] = {k: a.get(k) or 0 for k in ("prompt_tokens", "completion_tokens", "cached_tokens", "seconds", "cost_usd")}
+            return None
         if kind == "model_error":  # модель не ответила: ход жителя пропал, это видно в записи
             self._event(i, "model_error", note=str(a.get("note", ""))[:200])
             return None
@@ -588,18 +619,32 @@ class City:
             "delegated_share": (mean([len(m["delegated"]) / max(1, len(m["delegated"]) + len(m["votes"])) for m in months]) if self.cfg.form == "liquid" else None),
             "delegated_max": (max((max([list(m["delegated"].values()).count(j) for j in set(m["delegated"].values())] or [0]) for m in months), default=0) if self.cfg.form == "liquid" else None),
             "model_errors": sum(e["kind"] == "model_error" for m in months for e in m["events"]),
+            "majority_match": (lambda xs: round(sum(xs) / len(xs), 2) if xs else None)([m["matches_majority"] for m in months if m["matches_majority"] is not None]),
+            "votes_against_opinion": sum(1 for m in months for i, v in m["votes"].items() if v in ("for", "against") and m["opinions"].get(i) in ("for", "against") and m["opinions"][i] != v),
+            "opinions_given": mean([(m["opinion_tally"]["for"] + m["opinion_tally"]["against"]) / n for m in months]),
             "villains_deciding": len([v for v in villains if v in ever]) if not self.everyone else len(villains),
             "transfers_by_villains": sum(t["from"] in villains for t in self.transfers),
         }
         people = [dict(p, money=round(self.eco.savings[p["id"]]), views=views.get(p["id"], 0),
                        followers=sum(p["id"] in f for f in self.follows.values()),
                        posts=sum(q["author"] == p["id"] for q in self.posts),
-                       decided_months=sum(p["id"] in m["deciders"] for m in months), notes=self.notes[p["id"]]) for p in self.people]
+                       decided_months=sum(p["id"] in m["deciders"] for m in months), notes=self.notes[p["id"]],
+                       follows=sorted(self.follows[p["id"]]), calls=self.calls[p["id"]]) for p in self.people]
+        # цена прогона: расход вызовов модели по месяцам, волнам и жителям
+        blank = lambda: {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "seconds": 0.0, "cost_usd": 0.0}
+        cost = {"total": blank(), "by_month": {}, "by_wave": {w: blank() for w in PHASES}, "by_person": {}}
+        for i, log in self.calls.items():
+            for e in log:
+                if e["usage"]:
+                    for bucket in (cost["total"], cost["by_month"].setdefault(e["month"], blank()), cost["by_wave"][e["phase"]], cost["by_person"].setdefault(i, blank())):
+                        bucket["calls"] += 1
+                        for k, v in e["usage"].items():
+                            bucket[k] = round(bucket[k] + v, 4)
         clean = lambda q: {k: v for k, v in q.items() if k not in ("seen", "jitter")}
         return {"config": asdict(self.cfg), "form_name": FORMS[self.cfg.form], "seats": self.seats, "source": self.source,
                 "done": self.done, "month": self.month, "phase": PHASES[self.phase], "people": people, "months": months,
                 "current": None if self.done else self.cur,
-                "posts": [clean(q) for q in self.posts], "transfers": self.transfers, "messages": self.messages, "metrics": metrics}
+                "posts": [clean(q) for q in self.posts], "transfers": self.transfers, "messages": self.messages, "metrics": metrics, "cost": cost}
 
 
 def describe(p: dict) -> str:
@@ -659,6 +704,8 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
             actions.append({"type": "vote_candidate", "candidate_id": rng.choice(view["election"]["candidates"])["id"]})
     if view["delegation"] and phase == "talk" and not bill["your_gain"] and view["feed"] and rng.random() < 0.5 - 0.4 * p["interest"]:
         actions.append({"type": "delegate", "to_id": view["feed"][0]["author_id"]})  # кому некогда разбираться, доверяет тому, кого читает
+    if phase == "decide":
+        actions.append({"type": "opinion", "choice": "none" if not (bill["your_gain"] or feed_about) and rng.random() > p["interest"] * 2 else stance})
     if phase == "decide" and me["can_vote"] and rng.random() < (0.95 if decider else 0.3 + 0.6 * p["interest"]):
         actions.append({"type": "vote", "choice": stance})
     return actions
@@ -689,5 +736,6 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         m = r["metrics"]
         assert r["done"] and len(r["months"]) == 6 and all(len(x["deciders"]) == (20 if form in EVERYONE else 5) for x in r["months"]), form
         assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
+        assert all(sum(x["opinion_tally"].values()) == 20 for x in r["months"]) and m["majority_match"] is not None
         print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному жителю {m['gain']:+} "
               f"(только выгодные дали бы {m['gain_best']:+}), записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
