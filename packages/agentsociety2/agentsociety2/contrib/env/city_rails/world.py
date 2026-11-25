@@ -194,8 +194,11 @@ class Economy:
 class City:
     def __init__(self, cfg: Config | dict | None = None):
         self.cfg = cfg if isinstance(cfg, Config) else Config(**(cfg or {}))
-        c, rng = self.cfg, random.Random(self.cfg.seed)
-        self.rng = rng
+        # У каждой части города свой поток случайности от одного зерна: люди, злодеи, повестка, жребий, ход прогона.
+        # Поэтому при одном зерне и числе жителей люди и повестка одни и те же, какими бы ни были форма власти,
+        # доля злодеев и поведение жителей; злодеи при большей доле включают злодеев при меньшей.
+        c, rng = self.cfg, random.Random(f"{self.cfg.seed}/people")
+        self.rng = random.Random(f"{self.cfg.seed}/run")
         assert c.form in FORMS, c.form
         n = c.residents
         self.seats = c.seats or (3 if n < 16 else 5 if n < 30 else 7)
@@ -203,7 +206,7 @@ class City:
         if not any(j[4] for j in jobs):  # в городе должна быть хотя бы одна мастерская, иначе закон о поддержке мастерских пуст
             for k in rng.sample(range(n), max(1, n // 10)):
                 jobs[k] = next(j for j in JOBS if j[4])
-        villains = set(rng.sample(range(n), round(n * c.villain_share)))
+        villains = set(random.Random(f"{c.seed}/villains").sample(range(n), n)[:round(n * c.villain_share)])
         self.people = []
         twins = rng.sample(json.loads(Path(c.twins_path).read_text(encoding="utf-8")), n) if c.population == "twins" else []
         women, men = [x for x in NAMES if x in FEMALE], [x for x in NAMES if x not in FEMALE]
@@ -236,6 +239,8 @@ class City:
         self.eco = Economy(c, [p["wage"] for p in self.people], [p["start_savings"] for p in self.people],
                            [p["id"] for p in self.people if p["owner"]])
         self.start = copy.deepcopy(self.eco)
+        rng = random.Random(f"{c.seed}/agenda")
+        self.manager = rng.randrange(n)  # кто станет управляющим фондом, если такой закон примут: он знает о своей выгоде
         bad = rng.sample([b for b in BILLS if b["kind"] in ("impatient", "deceptive", "selfpay")], 5)
         other = rng.sample([b for b in BILLS if b["kind"] in ("investment", "redistribution")], 5)
         self.agenda = [b for pair in (zip(bad, other) if rng.random() < 0.5 else zip(other, bad)) for b in pair]
@@ -260,11 +265,10 @@ class City:
     def _open_month(self) -> None:
         c, n = self.cfg, self.cfg.residents
         if c.form == "lottery" and (self.month - 1) % c.term == 0:
-            self.deciders = sorted(self.rng.sample(range(n), self.seats))
+            self.deciders = sorted(random.Random(f"{c.seed}/lottery/{self.month}").sample(range(n), self.seats))
         bill = dict(self.agenda[(self.month - 1) % len(self.agenda)])
         owners = self.eco.owners
-        # управляющим фондом становится случайный житель: он получает выгоду от закона и знает об этом
-        bill["sponsor"] = self.rng.randrange(n) if bill["id"] == "manager" else None
+        bill["sponsor"] = self.manager if bill["id"] == "manager" else None
         bill["beneficiaries"] = owners if bill["id"] == "subsidy" else [bill["sponsor"]] if bill["sponsor"] is not None else []
         bill["effects"] = self._forecast(bill)
         typical = statistics.median(bill["effects"]["total"])
