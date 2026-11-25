@@ -447,6 +447,7 @@ class City:
                                "turnout": round(len(race["votes"]) / n, 2), "elected": self.deciders, "incumbents": race["incumbents"]})
         self.cur["deciders"], self.cur["election"] = list(self.deciders), {"elected": self.deciders, "candidates": sorted(race["candidates"]), "count": {}}
         self.race = None
+        self.spent = {i: 0.0 for i in range(n)}  # у раунда выборов своё время: его часы не вычитаются из месяца
 
     def _race_view(self, i: int) -> dict:
         """Что житель видит в раунде выборов: свой округ, кандидатов с программами, что они говорили и как голосовали раньше."""
@@ -457,7 +458,13 @@ class City:
                   "record": record(c), "said": [x["text"] for x in race["statements"] if x["author"] == c][-3:]}
                  for c, v in race["candidates"].items() if self.district[c] == d]
         pair = race["runoff"].get(d)
+        feed, fresh = self._read_feed(i, 8)
+        before = RACE[RACE.index(race["stage"]) - 1] if RACE.index(race["stage"]) else None
+        mine = [q for q in self.posts if q["author"] == i and q.get("race") and q["month"] == self.month
+                and any(c.get("race") == before and c["author"] != i for c in q["comments"])][-2:]
         return {
+            "feed": feed, "headlines": [{"post_id": q["id"] + POST0, "author": self.people[q["author"]]["name"], "start": q["text"][:60]} for q in fresh[8:14]],
+            "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
             "month": self.month, "months": self.cfg.months, "phase": race["stage"], "form": self.cfg.form, "idle": race["stage"] == "runoff" and not pair,
             "me": {"id": i, "name": p["name"], "money": round(self.eco.savings[i]), "income": round(self.eco.wages[i]), "free_hours": p["free"],
                    "hours_left": round(p["free"] - self.spent[i], 2), "role": self.role(i), "can_vote": False},
@@ -478,10 +485,19 @@ class City:
                 return "выдвижение закончилось"
             race["candidates"][i] = {"program": str(a.get("program", "")).strip()[:700]}
             self._event(i, "candidate")
-        elif kind == "campaign":
-            if race["stage"] not in ("campaign", "debate") or not str(a.get("text", "")).strip() or not self._spend(i, COST["comment"]):
-                return "сейчас не кампания, нет текста или часов"
-            race["statements"].append({"author": i, "text": str(a["text"]).strip()[:500], "stage": race["stage"], "district": self.district[i], "candidate": i in race["candidates"]})
+        elif kind in ("post", "comment"):  # обсуждение выборов идёт в общей ленте города; записи раунда помечены его этапом
+            note = self._act(i, a)
+            if note:
+                return note
+            step = RACE.index(race["stage"]) - len(RACE)
+            if kind == "post":
+                said = self.posts[-1]
+                said.update(race=race["stage"], phase=step, about_bill=False)
+            else:
+                said = self.posts[int(a["post_id"]) - POST0]["comments"][-1]
+                said.update(race=race["stage"], phase=step)
+            race["statements"].append({"author": i, "text": said["text"], "stage": race["stage"], "district": self.district[i], "candidate": i in race["candidates"],
+                                       "reply_to": None if kind == "post" else int(a["post_id"]) - POST0})
         elif kind == "vote_candidate":
             c, pair = int(a["candidate_id"]), race["runoff"].get(self.district[i])
             if race["stage"] == "vote" and c in race["candidates"] and self.district[c] == self.district[i] and i not in race["votes"]:
@@ -528,15 +544,7 @@ class City:
         p, cur, bill, phase = self.people[i], self.cur, self.cur["bill"], PHASES[self.phase]
         feed_hours = cur["plans"].get(i, {}).get("feed_hours", 0 if self.phase else p["free"] * 0.1)
         shown = min(8, int(-(-feed_hours // self.cfg.hours_per_post)))
-        fresh = [q for q in self.posts if q["author"] != i and i not in q["seen"]]
-        fresh.sort(key=lambda q: -self._rank(q, i))
-        feed = []
-        for q in fresh[:shown]:
-            q["seen"].add(i)
-            q["views"] += 1
-            feed.append({"post_id": q["id"] + POST0, "author_id": q["author"], "author": self.people[q["author"]]["name"],
-                         "author_role": self.role(q["author"]), "text": q["text"],
-                         "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-4:]]})
+        feed, fresh = self._read_feed(i, shown)
         # Зал тех, кто решает. Правило одно для всех форм власти: читать можно столько реплик, на сколько отведено часов.
         # В совете из пяти человек прочесть всё легко, при прямом голосовании зал это весь город.
         hall = None
@@ -587,9 +595,27 @@ class City:
         self._views[key] = view
         return view
 
+    def _read_feed(self, i: int, shown: int) -> tuple[list[dict], list[dict]]:
+        """Записи, которые житель успевает прочесть в этой волне, и все непрочитанные по порядку ленты.
+
+        В раунде выборов лента отдана выборам: видны только записи этого раунда. В месяцах записи раунда не показываются.
+        """
+        fresh = [q for q in self.posts if q["author"] != i and i not in q["seen"] and (("race" in q) == bool(self.race))
+                 and (not self.race or q["month"] == self.month)]
+        fresh.sort(key=lambda q: -self._rank(q, i))
+        feed = []
+        for q in fresh[:shown]:
+            q["seen"].add(i)
+            q["views"] += 1
+            feed.append({"post_id": q["id"] + POST0, "author_id": q["author"], "author": self.people[q["author"]]["name"],
+                         "author_role": self.role(q["author"]), "text": q["text"],
+                         "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-4:]]})
+        return feed, fresh
+
     def _rank(self, q: dict, reader: int) -> float:
         """Порядок ленты: свежесть, отклик, число подписчиков автора, моя подписка. Про право решать лента не знает."""
-        age = (self.month - q["month"]) * 3 + (self.phase - q["phase"])
+        now = RACE.index(self.race["stage"]) - len(RACE) if self.race else self.phase  # этапы выборов идут до первой волны месяца
+        age = (self.month - q["month"]) * 3 + (now - q["phase"])
         followers = sum(q["author"] in f for f in self.follows.values())
         return -0.7 * age + 0.5 * len(q["comments"]) + 0.4 * followers + (2.0 if q["author"] in self.follows[reader] else 0.0) + q["jitter"]
 
@@ -845,7 +871,7 @@ def scripted(view: dict, p: dict, rng: random.Random) -> list[dict]:
         if stage == "nominate":
             return [{"type": "nominate", "program": "Буду считать каждый доллар фонда и отчитываться перед округом."}] if p.get("keen") or rng.random() < 0.12 else []
         if stage in ("campaign", "debate"):
-            return [{"type": "campaign", "text": "Мой округ получит отчёт о каждом моём голосе." if race["running"] else "Как вы будете голосовать по тратам фонда?"}] if race["running"] or rng.random() < 0.2 else []
+            return [{"type": "post", "text": "Мой округ получит отчёт о каждом моём голосе." if race["running"] else "Как вы будете голосовать по тратам фонда?"}] if race["running"] or rng.random() < 0.2 else []
         pool = race["runoff"] or [c["id"] for c in race["candidates"]]
         return [{"type": "vote_candidate", "candidate_id": rng.choice(pool)}] if pool and rng.random() < 0.7 else []
     phase, bill, me = view["phase"], view["bill"], view["me"]
