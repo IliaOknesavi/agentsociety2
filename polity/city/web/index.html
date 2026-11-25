@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Город на рельсах</title>
+<title>Симуляция форм власти</title>
 <style>
   :root { --bg:#f6f4ef; --card:#fff; --ink:#1f2328; --muted:#6b7280; --line:#e4e0d6; --accent:#b4532a; --accent-soft:#f7e6dc;
           --good:#1f7a4d; --good-soft:#e2f3ea; --bad:#b3261e; --bad-soft:#fbe4e2; --blue:#2b5fa8; --blue-soft:#e3ecf8; --dot:#cfc9bb; }
@@ -84,9 +84,8 @@
 </head>
 <body>
 <nav class="top">
-  <a class="logo" href="#/">Город на рельсах</a>
-  <a class="item" data-nav="home" href="#/">Прогоны</a>
-  <a class="item" data-nav="new" href="#/new">Новый прогон</a>
+  <a class="item" data-nav="home" href="#/">Запуски</a>
+  <a class="item" data-nav="new" href="#/new">Новый запуск</a>
   <a class="item" data-nav="compare" href="#/compare">Сравнение</a>
   <a class="item" data-nav="checks" href="#/checks">Проверки жителя</a>
   <a class="item" data-nav="how" href="#/how">Устройство</a>
@@ -142,28 +141,28 @@ function statusTag(r) {
   return r.done ? `<span class="tag good">готов</span>` : r.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`;
 }
 
-/* ---------- сцена: прогоны ---------- */
+/* ---------- сцена: запуски ---------- */
 function home() {
   const towns = {};
   S.runs.filter(r => r.config).forEach(r => (towns[townKey(r.config)] ??= []).push(r));
   const starting = S.runs.filter(r => !r.config);
-  let h = `<div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:16px"><div><h1>Прогоны</h1><div class="muted">Один город можно прожить под разными формами власти: люди и повестка законов при том же зерне одни и те же.</div></div><span style="flex:1"></span><a class="btn primary" href="#/new">Новый прогон</a></div>`;
-  h += starting.map(r => `<div class="card"><b>${esc(r.id)}</b> ${statusTag(r)} <button class="ghost" data-del="${esc(r.id)}">удалить</button><div class="muted small">${r.queued ? "Прогоны на модели идут по одному; этот начнётся, когда закончится предыдущий." : r.failed ? esc((r.log || "").slice(-300)) : "Каркас AgentSociety 2 поднимается около минуты, затем запись пойдёт по волнам."}</div></div>`).join("");
+  let h = `<div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:16px"><div><h1>Запуски</h1><div class="muted">Один город можно прожить под разными формами власти: люди и повестка законов при том же зерне одни и те же.</div></div><span style="flex:1"></span><a class="btn primary" href="#/new">Новый запуск</a></div>`;
+  h += starting.map(r => `<div class="card"><b>${esc(r.id)}</b> ${statusTag(r)} <button class="ghost" data-del="${esc(r.id)}">удалить</button><div class="muted small">${r.queued ? "Запуски на модели идут по одному; этот начнётся, когда закончится предыдущий." : r.failed ? esc((r.log || "").slice(-300)) : "Каркас AgentSociety 2 поднимается около минуты, затем запись пойдёт по волнам."}</div></div>`).join("");
   for (const runs of Object.values(towns)) {
     const c = runs[0].config;
-    h += `<h3>Город: ${townName(c)}${runs.filter(r => r.metrics.laws).length > 1 ? ` · <a href="#/compare?ids=${runs.filter(r => r.metrics.laws).map(r => r.id).join(",")}" style="text-transform:none;letter-spacing:0">сравнить прогоны этого города</a>` : ""}</h3><div class="grid cards">` + runs.map(r => {
+    h += `<h3>Город: ${townName(c)}${runs.filter(r => r.metrics.laws).length > 1 ? ` · <a href="#/compare?ids=${runs.filter(r => r.metrics.laws).map(r => r.id).join(",")}" style="text-transform:none;letter-spacing:0">сравнить запуски этого города</a>` : ""}</h3><div class="grid cards">` + runs.map(r => {
       const m = r.metrics, k = r.config, progress = r.done ? 1 : ((r.month - 1) * 3 + WAVES.indexOf(r.phase)) / (k.months * 3);
-      return `<div class="card runcard" data-open="${esc(r.id)}"><div class="acts"><button class="ghost" title="Создать прогон с теми же настройками" data-copy="${esc(r.id)}">копия</button><button class="ghost" title="Удалить" data-del="${esc(r.id)}">×</button></div>
+      return `<div class="card runcard" data-open="${esc(r.id)}"><div class="acts"><button class="ghost" title="Создать запуск с теми же настройками" data-copy="${esc(r.id)}">копия</button><button class="ghost" title="Удалить" data-del="${esc(r.id)}">×</button></div>
         <h2>${esc(r.form_name)}</h2><div class="muted small">${k.months} мес., злодеев ${Math.round(k.villain_share * 100)}%${k.threshold > 0.5 ? ", порог " + Math.round(k.threshold * 100) + "%" : ""}${k.bulletin ? ", расчёт рассылается всем" : ""}${k.hall === false ? ", без зала" : ""}<br>${esc(r.source)}</div>
         <div class="bar"><i style="width:${progress * 100}%;background:${r.done ? "var(--good)" : "var(--accent)"}"></i></div>${statusTag(r)}
         ${m.laws ? `<div style="margin-top:8px"><span class="tag ${m.harmful_passed ? "bad" : "good"}">${m.gain_fund !== undefined ? "плохих по обоим счётам" : "убыточных"} принято ${m.harmful_passed} из ${m.harmful_total}</span><span class="tag">типичному на руки ${signed(m.gain)}${m.gain_fund !== undefined ? " $" : ""}</span>${m.majority_match != null ? `<span class="tag">с большинством совпало ${pct(m.majority_match)}</span>` : ""}</div>` : ""}</div>`;
     }).join("") + `</div>`;
   }
-  if (!S.runs.length) h += `<div class="empty">Пока нет ни одного прогона. <a href="#/new">Создать первый</a></div>`;
+  if (!S.runs.length) h += `<div class="empty">Пока нет ни одного запуска. <a href="#/new">Создать первый</a></div>`;
   return h;
 }
 
-/* ---------- сцена: новый прогон ---------- */
+/* ---------- сцена: новый запуск ---------- */
 function forecast(d) {
   if (d.mode !== "model") return null;
   const same = S.runs.filter(r => r.config && r.cost && r.cost.calls > 20 && r.source.includes(d.model.split("/").pop()));
@@ -179,8 +178,8 @@ function forecast(d) {
 function newRun() {
   const d = S.draft, f = forecast(d), t = S.town, n = d.forms.length * (d.pair && d.villains > 0 ? 2 : 1);
   const existing = S.runs.filter(r => r.config && townKey(r.config) === townKey(d));
-  return `<div class="crumbs"><a href="#/">Прогоны</a> / новый прогон</div><h1>Новый прогон</h1>
-    ${d.from ? `<div class="note">Копия прогона «${esc(d.fromName)}»: тот же город и те же настройки. Поменяйте, что нужно, например форму власти.</div>` : `<div class="muted" style="margin-bottom:14px">Город задают источник жителей, их число и зерно. Всё остальное можно менять, оставаясь в том же городе.</div>`}
+  return `<div class="crumbs"><a href="#/">Запуски</a> / новый запуск</div><h1>Новый запуск</h1>
+    ${d.from ? `<div class="note">Копия запуска «${esc(d.fromName)}»: тот же город и те же настройки. Поменяйте, что нужно, например форму власти.</div>` : `<div class="muted" style="margin-bottom:14px">Город задают источник жителей, их число и зерно. Всё остальное можно менять, оставаясь в том же городе.</div>`}
     <div class="grid g2" style="align-items:start"><div>
     <div class="card"><h2>1. Город</h2>
       <label class="f">Откуда жители</label>
@@ -189,8 +188,8 @@ function newRun() {
       <div class="grid g2"><div><label class="f">Жителей</label><input type="number" data-num="residents" value="${d.residents}" min="4" max="200"></div>
       <div><label class="f">Зерно города</label><input type="number" data-num="seed" value="${d.seed}" min="0"></div></div>
       ${t ? `<label class="f">Кто живёт в этом городе</label><div>${t.people.map(q => `<span class="chip">${esc(q.name)}, ${esc(q.job_ru)}${$("#reveal").checked && q.villain ? " · злодей" : ""}</span>`).join("")}</div>` : ""}
-      ${existing.length ? `<div class="muted small" style="margin-top:6px">В этом городе уже есть прогоны: ${existing.map(r => `<a href="#/run/${r.id}">${esc(r.form_name)}</a>`).join(", ")}.</div>` : ""}</div>
-    <div class="card"><h2>2. Кто решает</h2><div class="muted small">Можно отметить несколько форм: запустится по прогону на каждую, город один.</div>
+      ${existing.length ? `<div class="muted small" style="margin-top:6px">В этом городе уже есть запуски: ${existing.map(r => `<a href="#/run/${r.id}">${esc(r.form_name)}</a>`).join(", ")}.</div>` : ""}</div>
+    <div class="card"><h2>2. Кто решает</h2><div class="muted small">Можно отметить несколько форм: запустится по запуску на каждую, город один.</div>
       <div class="grid g2" style="margin-top:8px">${Object.entries(S.forms).map(([k, v]) => `<div class="opt ${d.forms.includes(k) ? "on" : ""}" data-form="${k}"><b>${esc(v)}</b><small>${FORM_HINT[k]}</small></div>`).join("")}</div>
       <div class="grid g2"><div><label class="f">Порог принятия, % голосов «за»</label><input type="number" data-num="threshold" value="${d.threshold}" min="50" max="90"></div>
       <div><label class="f">Месяцев</label><input type="number" data-num="months" value="${d.months}" min="1" max="24"></div></div>
@@ -200,21 +199,21 @@ function newRun() {
     </div><div>
     <div class="card"><h2>3. Злодеи</h2><div class="muted small">Раздаются случайно, место в городе им не задаётся. При большей доле к прежним злодеям добавляются новые.</div>
       <label class="f">Доля злодеев, %</label><input type="number" data-num="villains" value="${d.villains}" min="0" max="50">
-      <label class="toggle" style="margin-top:10px;color:var(--ink)"><input type="checkbox" data-bool="pair" ${d.pair ? "checked" : ""}> добавить парный прогон того же города без злодеев</label></div>
+      <label class="toggle" style="margin-top:10px;color:var(--ink)"><input type="checkbox" data-bool="pair" ${d.pair ? "checked" : ""}> добавить парный запуск того же города без злодеев</label></div>
     <div class="card"><h2>4. Кто решает за жителей</h2>
       <div class="grid g2"><div class="opt ${d.mode === "rules" ? "on" : ""}" data-set="mode=rules"><b>Правила</b><small>без модели, считается сразу; для проверки мира</small></div>
       <div class="opt ${d.mode === "model" ? "on" : ""}" data-set="mode=model"><b>Языковая модель</b><small>жители в AgentSociety 2</small></div></div>
       ${d.mode === "model" ? `<label class="f">Модель</label><select data-sel="model">${Object.entries(S.models).map(([k, v]) => `<option value="${k}" ${k === d.model ? "selected" : ""}>${esc(v)}</option>`).join("")}</select>
-        ${S.proxy ? "" : `<div class="note warn" style="margin-top:8px">В окружении приложения не задан HTTPS_PROXY: прогон на модели зависнет на первой волне.</div>`}` : ""}</div>
-    <div class="card"><h2>5. Цена</h2>${f ? `<div class="muted small">${f.measured ? `Расчёт по ${f.measured} прогонам на этой модели.` : "Прогонов на этой модели с записанным расходом ещё нет, взяты числа по умолчанию."} Житель, которому в обсуждении нечего читать, модель не зовёт.</div>
-        <table style="margin-top:8px"><tr><th>На один прогон</th><th class="n">Вызовов</th><th class="n">Токенов на вход</th><th class="n">На выход</th></tr>
+        ${S.proxy ? "" : `<div class="note warn" style="margin-top:8px">В окружении приложения не задан HTTPS_PROXY: запуск на модели зависнет на первой волне.</div>`}` : ""}</div>
+    <div class="card"><h2>5. Цена</h2>${f ? `<div class="muted small">${f.measured ? `Расчёт по ${f.measured} запускам на этой модели.` : "Запусков на этой модели с записанным расходом ещё нет, взяты числа по умолчанию."} Житель, которому в обсуждении нечего читать, модель не зовёт.</div>
+        <table style="margin-top:8px"><tr><th>На один запуск</th><th class="n">Вызовов</th><th class="n">Токенов на вход</th><th class="n">На выход</th></tr>
         ${WAVES.map(w => `<tr><td>волна «${WAVE[w]}», за месяц</td><td class="n">${num(f.waves[w])}</td><td class="n">${kTok(f.waves[w] * f.inTok)}</td><td class="n">${kTok(f.waves[w] * f.outTok)}</td></tr>`).join("")}
         <tr><td>один месяц</td><td class="n">${num(f.perMonth)}</td><td class="n">${kTok(f.perMonth * f.inTok)}</td><td class="n">${kTok(f.perMonth * f.outTok)}</td></tr>
-        <tr><td><b>весь прогон, ${d.months} мес.</b></td><td class="n"><b>${num(f.calls)}</b></td><td class="n"><b>${kTok(f.input)}</b></td><td class="n"><b>${kTok(f.output)}</b></td></tr>
-        ${f.runs > 1 ? `<tr><td><b>все ${f.runs} прогонов</b></td><td class="n"><b>${num(f.calls * f.runs)}</b></td><td class="n"><b>${kTok(f.input * f.runs)}</b></td><td class="n"><b>${kTok(f.output * f.runs)}</b></td></tr>` : ""}</table>
-        <div style="margin-top:8px">Время: около ${dur(f.seconds)} на прогон, прогоны идут по очереди.
+        <tr><td><b>весь запуск, ${d.months} мес.</b></td><td class="n"><b>${num(f.calls)}</b></td><td class="n"><b>${kTok(f.input)}</b></td><td class="n"><b>${kTok(f.output)}</b></td></tr>
+        ${f.runs > 1 ? `<tr><td><b>все запуски, ${f.runs}</b></td><td class="n"><b>${num(f.calls * f.runs)}</b></td><td class="n"><b>${kTok(f.input * f.runs)}</b></td><td class="n"><b>${kTok(f.output * f.runs)}</b></td></tr>` : ""}</table>
+        <div style="margin-top:8px">Время: около ${dur(f.seconds)} на запуск, запуски идут по очереди.
         ${d.model.includes("gpt") ? `Доля пятичасового окна подписки ChatGPT: <b>${pct(f.input * f.runs / WINDOW_TOKENS)}</b>.` : "По подписке Claude деньги не списываются; доля лимита подписки неизвестна."}</div>` : `<div class="muted">Жители по правилам модель не зовут: бесплатно и сразу.</div>`}</div>
-    <button class="primary" id="go" style="width:100%;padding:12px" ${d.forms.length ? "" : "disabled"}>Запустить ${n > 1 ? n + " прогонов" : "прогон"}</button><div id="msg" class="muted" style="margin-top:8px"></div>
+    <button class="primary" id="go" style="width:100%;padding:12px" ${d.forms.length ? "" : "disabled"}>Запустить${n > 1 ? ": " + n : ""}</button><div id="msg" class="muted" style="margin-top:8px"></div>
     </div></div>`;
 }
 function draftFrom(r) {
@@ -238,11 +237,11 @@ async function launch() {
   } catch (e) { $("#msg").textContent = "Не запустилось: " + e.message; $("#go").disabled = false; }
 }
 
-/* ---------- сцена: прогон ---------- */
+/* ---------- сцена: запуск ---------- */
 function runHead(tab) {
   const r = S.rec, c = r.config, info = S.runs.find(x => x.id === S.recId) || {};
   const tabs = [["months", "Месяцы"], ["people", "Жители"], ["chats", "Чаты"], ["totals", "Итоги"], ["cost", "Цена"]];
-  return `<div class="crumbs"><a href="#/">Прогоны</a> / ${townName(c)}</div>
+  return `<div class="crumbs"><a href="#/">Запуски</a> / ${townName(c)}</div>
     <div style="display:flex;align-items:flex-start;gap:12px"><div><h1>${esc(r.form_name)}</h1><div class="muted">${c.months} мес., злодеев ${Math.round(c.villain_share * 100)}%${c.threshold > 0.5 ? ", порог " + Math.round(c.threshold * 100) + "%" : ""}${c.bulletin ? ", расчёт рассылается всем" : ""} · ${esc(r.source)} ${r.done ? `<span class="tag good">готов</span>` : info.failed ? `<span class="tag bad">оборвался</span>` : `<span class="tag acc">идёт: месяц ${r.month}, ${WAVE[r.phase]}</span>`}</div></div>
     <span style="flex:1"></span><button data-feed-open="0">Лента города</button><a class="btn" href="#/new?from=${S.recId}">Копия с другими настройками</a><a class="btn" href="#/compare?ids=${S.recId}">Сравнить</a></div>
     <div class="subtabs">${tabs.map(([k, v]) => `<a class="${k === tab ? "on" : ""}" href="#/run/${S.recId}/${k}">${v}</a>`).join("")}</div>`;
@@ -294,8 +293,8 @@ function monthPanel(m) {
     : tab === "hall" ? (`<div class="muted small">Зал тех, кто решает: пишут и читают только жители с правом голоса, сейчас их ${m.deciders.length}. Остальные жители зала не видят.</div>` + (hallList(m) || `<div class="muted" style="margin-top:8px">В этом месяце в зале никто не выступал.</div>`))
     : tab === "mail" ? (ms.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)} <span class="muted small">${WAVE[WAVES[x.phase]]}</span><div>${esc(x.text)}</div></div>`).join("") || `<div class="muted">Никто никому не писал.</div>`)
     : tab === "money" ? (tr.map(x => `<div class="post">${who(x.from, m)} → ${who(x.to, m)}: <b>${x.amount}</b> ${U()}${x.to_decider ? ` <span class="tag bad">тому, кто решает</span>` : ""}<div class="muted small">${esc(x.note)}</div></div>`).join("") || `<div class="muted">Переводов не было.</div>`)
-    : tab === "acts" ? (WAVES.map(w => { const xs = acts.filter(x => x.phase === w); return xs.length ? `<div class="post"><b>Волна «${WAVE[w]}»</b>${xs.map(x => `<div class="small">${who(x.i, m)}: ${x.refused ? `<span style="color:var(--bad)">среда отказала: ${esc(x.refused)}</span>` : esc(act(x.a))}</div>`).join("")}</div>` : ""; }).join("") || `<div class="muted">Журнал действий есть только в прогонах новой записи.</div>`)
-    : (thoughts.map(c => `<div class="post">${who(c.i, m)} <span class="muted small">${WAVE[c.phase]}</span><div>${esc(c.thought)}</div></div>`).join("") || `<div class="muted">Мысли записываются только у жителей на модели, в прогонах новой записи.</div>`);
+    : tab === "acts" ? (WAVES.map(w => { const xs = acts.filter(x => x.phase === w); return xs.length ? `<div class="post"><b>Волна «${WAVE[w]}»</b>${xs.map(x => `<div class="small">${who(x.i, m)}: ${x.refused ? `<span style="color:var(--bad)">среда отказала: ${esc(x.refused)}</span>` : esc(act(x.a))}</div>`).join("")}</div>` : ""; }).join("") || `<div class="muted">Журнал действий есть только в запусках новой записи.</div>`)
+    : (thoughts.map(c => `<div class="post">${who(c.i, m)} <span class="muted small">${WAVE[c.phase]}</span><div>${esc(c.thought)}</div></div>`).join("") || `<div class="muted">Мысли записываются только у жителей на модели, в запусках новой записи.</div>`);
   if (tab === "feed" && posts.length) tabs.push(["open", "Лента на весь экран"]);
   return `<div class="card"><div class="muted small">Месяц ${m.month} <span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${vtag(b)}</div>
       <h2 style="margin-top:4px">${esc(b.title)}</h2><div class="small">${esc(b.pitch)}</div>
@@ -312,7 +311,7 @@ function monthsScene() {
   const sel = Math.min(S.pinLaw ?? all.length, all.length);
   const laws = all.map(x => { const open = x.passed === undefined; return `<div class="law ${x.month === sel ? "on" : ""}" data-law="${x.month}"><div class="m">месяц ${x.month}${open ? " · идёт" : ` · за ${x.tally.for}, против ${x.tally.against}`}${x.matches_majority === false ? " · против большинства" : ""}</div><div class="t">${esc(x.bill.title)}</div>
       <span class="tag ${verdict(x.bill)[1]}">${verdict(x.bill)[0].split(":")[0].replace(" для большинства", "").replace(" большинству", "")}</span>${open ? "" : `<span class="tag ${x.passed ? (x.bill.harmful && !x.bill.contested ? "bad" : "good") : ""}">${x.passed ? "принят" : "отклонён"}</span>`}</div>`; }).join("");
-  return runHead("months") + `<div class="stage"><div><h3 style="margin-top:0">Законы прогона</h3>${laws}</div>
+  return runHead("months") + `<div class="stage"><div><h3 style="margin-top:0">Законы запуска</h3>${laws}</div>
     <div class="card" id="circlebox">${circle(all[(S.hoverLaw ?? sel) - 1])}</div><div id="monthbox">${monthPanel(all[sel - 1])}</div></div>`;
 }
 
@@ -320,14 +319,14 @@ function monthsScene() {
 S.trail = [];
 function backLabel(hash) {
   const parts = (hash || "").replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean);
-  if (!parts.length) return "к прогонам";
+  if (!parts.length) return "к запускам";
   if (parts[0] === "run") {
     const t = parts[2] || "months";
     if (t === "law") return `к закону месяца ${parts[3]}`;
     if (t === "person") return S.rec && S.recId === parts[1] && P(+parts[3]) ? `к жителю ${P(+parts[3]).name}` : "к жителю";
     return {months:"к месяцам", people:"к списку жителей", totals:"к итогам", cost:"к цене", chats:"к чатам"}[t] || "";
   }
-  return {new:"к новому прогону", compare:"к сравнению", checks:"к проверкам", how:"к устройству"}[parts[0]] || "";
+  return {new:"к новому запуску", compare:"к сравнению", checks:"к проверкам", how:"к устройству"}[parts[0]] || "";
 }
 const backBtn = fallback => `<button data-back="${esc(fallback)}">← Назад ${esc(backLabel(S.trail[S.trail.length - 1] ?? fallback))}</button>`;
 function pairThread(a, b) {  // письма и переводы двух жителей по порядку
@@ -350,11 +349,11 @@ function chatsBlock(i) {  // собеседники жителя слева, в�
   return `<div class="chat"><div>${ps.map(([j, n]) => { const last = pairThread(i, j).filter(x => x.kind === "msg").pop(); return `<div class="chatitem ${j === sel ? "on" : ""}" data-chat="${j}"><b>${who(j, null, true)}</b> <span class="muted small">${n}</span><div class="muted small">${last ? esc(last.text.slice(0, 64)) : "только переводы"}</div></div>`; }).join("")}</div>
     <div class="chatbody"><div class="small muted">${esc(P(i).name)} и <a href="#/run/${S.recId}/person/${sel}">${esc(P(sel).name)}</a></div>${chatView(i, sel)}</div></div>`;
 }
-function chatsScene(key) {  // все личные разговоры прогона
+function chatsScene(key) {  // все личные разговоры запуска
   const r = S.rec, pairs = {};
   [...r.messages, ...r.transfers].forEach(x => { const k = Math.min(x.from, x.to) + "-" + Math.max(x.from, x.to); pairs[k] = (pairs[k] || 0) + 1; });
   const list = Object.entries(pairs).sort((a, b) => b[1] - a[1]);
-  if (!list.length) return runHead("chats") + `<div class="empty">В этом прогоне никто никому не писал и не переводил денег.</div>`;
+  if (!list.length) return runHead("chats") + `<div class="empty">В этом запуске никто никому не писал и не переводил денег.</div>`;
   const sel = pairs[key] ? key : list[0][0], [a, b] = sel.split("-").map(Number);
   return runHead("chats") + `<div class="card"><div class="chat"><div style="max-height:640px;overflow:auto">${list.map(([k, n]) => { const [x, y] = k.split("-").map(Number); return `<div class="chatitem ${k === sel ? "on" : ""}" data-pair="${k}"><b>${who(x, null, true)} и ${who(y, null, true)}</b> <span class="muted small">${n}</span></div>`; }).join("")}</div>
     <div class="chatbody"><div class="small muted"><a href="#/run/${S.recId}/person/${a}">${esc(P(a).name)}</a> и <a href="#/run/${S.recId}/person/${b}">${esc(P(b).name)}</a>; реплики первого справа</div>${chatView(a, b)}</div></div></div>`;
@@ -382,7 +381,7 @@ function drawFeed() {  // лента города во всплывающем о
         ${m && council(r.config.form) && m.deciders.includes(q.author) ? `<span class="tag blue">решает</span>` : ""}${q.role && r.config.form === "liquid" ? `<span class="tag blue">${esc(q.role)}</span>` : ""}${$("#reveal").checked && P(q.author).villain ? `<span class="tag bad">злодей</span>` : ""}
         <span class="muted small">· месяц ${q.month}, ${WAVE[WAVES[q.phase]]}</span>${q.about_bill ? ` <span class="tag acc">о законе</span>` : ""}</div>
       <div class="ftext">${esc(q.text)}</div>
-      <div class="fmeta"><span data-tip="${q.viewers ? (q.viewers.length ? "Прочли: " + esc(names(q.viewers)) : "Никто не прочёл") : "В этой записи прогона список читателей не сохранён"}">прочли ${q.views}</span> &nbsp;·&nbsp;
+      <div class="fmeta"><span data-tip="${q.viewers ? (q.viewers.length ? "Прочли: " + esc(names(q.viewers)) : "Никто не прочёл") : "В этой записи запуска список читателей не сохранён"}">прочли ${q.views}</span> &nbsp;·&nbsp;
         <span data-tip="${repliers.length ? "Ответили: " + esc(names(repliers)) : "Никто не ответил"}">ответов ${q.comments.length}</span>${q.viewers ? ` &nbsp;·&nbsp; <span data-tip="${esc(names(r.people.map(x => x.id).filter(j => j !== q.author && !q.viewers.includes(j))) || "таких нет")}">не видели ${r.people.length - 1 - q.viewers.length}</span>` : ""}</div>
       ${q.comments.map(c => `<div class="fcomment">${ava(c.author)}<div><a href="#/run/${S.recId}/person/${c.author}" data-close="1"><b>${esc(P(c.author).name)}</b></a> <span class="muted small">месяц ${c.month}${c.phase != null ? ", " + WAVE[WAVES[c.phase]] : ""}</span><div>${esc(c.text)}</div></div></div>`).join("")}</div></div>`; };
   box.innerHTML = `<div class="overlay" data-overlay="1"><div class="modal"><div class="mhead"><h2>Лента города</h2>
@@ -397,7 +396,7 @@ function drawFeed() {  // лента города во всплывающем о
 
 /* ---------- сцена: карточка закона ---------- */
 function lawScene(k) {
-  const m = months()[k - 1]; if (!m) return runHead("months") + `<div class="empty">Такого месяца в прогоне нет.</div>`;
+  const m = months()[k - 1]; if (!m) return runHead("months") + `<div class="empty">Такого месяца в запуске нет.</div>`;
   const r = S.rec, b = m.bill, open = m.passed === undefined, ot = m.opinion_tally, n = r.people.length;
   const rows = r.people.map(p => { const s = lawState(m, p.id), th = (p.calls || []).filter(c => c.month === m.month && c.thought).pop();
     return `<tr class="click" data-go="#/run/${S.recId}/person/${p.id}"><td>${who(p.id, m, true)}</td><td>${esc(p.job_ru)}</td><td class="n">${signed(b.effects.cash ? b.effects.cash[p.id] : b.effects.total[p.id])}</td><td>${m.studied.includes(p.id) ? "да" : ""}</td>
@@ -405,17 +404,17 @@ function lawScene(k) {
       <td>${s.vote ? `<span class="tag" style="background:${COLOR[s.vote]};color:#fff">${CHOICE[s.vote]}</span>${s.opinion && s.opinion !== "none" && s.vote !== "abstain" && s.opinion !== s.vote ? ` <span class="tag bad">против своего мнения</span>` : ""}` : s.via != null ? `через ${esc(P(s.via).name)}` : m.deciders.includes(p.id) ? `<span class="muted">не голосовал</span>` : `<span class="muted">нет права</span>`}</td>
       <td class="small">${th ? esc(th.thought) : ""}</td></tr>`; }).join("");
   const posts = r.posts.filter(q => q.month === m.month && q.about_bill), ms = r.messages.filter(x => x.month === m.month), tr = r.transfers.filter(x => x.month === m.month);
-  return `<div class="crumbs"><a href="#/">Прогоны</a> / <a href="#/run/${S.recId}/months">${esc(r.form_name)}</a> / закон месяца ${m.month}</div>
+  return `<div class="crumbs"><a href="#/">Запуски</a> / <a href="#/run/${S.recId}/months">${esc(r.form_name)}</a> / закон месяца ${m.month}</div>
     <div style="display:flex;gap:8px;align-items:center">${backBtn(`#/run/${S.recId}/months`)}<span style="flex:1"></span>${k > 1 ? `<a class="btn" href="#/run/${S.recId}/law/${k - 1}">← закон месяца ${k - 1}</a>` : ""}${k < months().length ? `<a class="btn" href="#/run/${S.recId}/law/${k + 1}">закон месяца ${k + 1} →</a>` : ""}</div>
     <h1 style="margin-top:10px">${esc(b.title)}</h1><div><span class="tag ${KIND[b.kind][1]}">${KIND[b.kind][0]}</span>${vtag(b)}
       ${open ? `<span class="tag acc">решение ещё не принято</span>` : m.passed ? `<span class="tag good">принят</span>` : `<span class="tag bad">отклонён</span>`}</div>
     <div class="grid g2" style="margin-top:14px;align-items:start"><div class="card"><h2>Что говорит автор</h2>${esc(b.pitch)}${b.terms ? `<div style="margin-top:8px"><b>Что записано в законе.</b> ${esc(b.terms)}</div>` : ""}<div class="calc"><b>Расчёт города.</b> ${esc(b.analysis)}</div>
-      <div class="muted small" style="margin-top:8px">Расчёт стоит жителю 4 часа${r.config.bulletin ? "; в этом прогоне общий расчёт рассылается всем" : ""}. Заказали: ${m.studied.length ? m.studied.map(i => who(i, m)).join(", ") : "никто"}.</div></div>
+      <div class="muted small" style="margin-top:8px">Расчёт стоит жителю 4 часа${r.config.bulletin ? "; в этом запуске общий расчёт рассылается всем" : ""}. Заказали: ${m.studied.length ? m.studied.map(i => who(i, m)).join(", ") : "никто"}.</div></div>
     <div class="card"><h2>Решение и мнение города</h2>
       <table><tr><th></th><th class="n">за</th><th class="n">против</th><th class="n">остальные</th></tr>
       <tr><td>голоса тех, у кого право решать (${m.deciders.length})</td><td class="n">${open ? "" : m.tally.for}</td><td class="n">${open ? "" : m.tally.against}</td><td class="n">${open ? "" : m.deciders.length - m.tally.for - m.tally.against}</td></tr>
       ${ot ? `<tr><td>мнение всех жителей (${n})</td><td class="n">${ot.for}</td><td class="n">${ot.against}</td><td class="n">${ot.none}</td></tr>` : ""}</table>
-      <div style="margin-top:8px">${m.matches_majority == null ? (ot ? "Мнения разделились поровну." : open ? "Мнения собираются в волне решения." : "В этом прогоне мнение всех жителей не записывалось.") : m.matches_majority ? `<span class="tag good">решение совпало с мнением большинства</span>` : `<span class="tag bad">решение принято против мнения большинства</span>`}</div>
+      <div style="margin-top:8px">${m.matches_majority == null ? (ot ? "Мнения разделились поровну." : open ? "Мнения собираются в волне решения." : "В этом запуске мнение всех жителей не записывалось.") : m.matches_majority ? `<span class="tag good">решение совпало с мнением большинства</span>` : `<span class="tag bad">решение принято против мнения большинства</span>`}</div>
       ${council(r.config.form) ? `<div class="muted small" style="margin-top:6px">Решали: ${m.deciders.map(i => who(i)).join(", ") || "совет ещё не выбран"}</div>` : ""}
       ${m.election ? `<div class="muted small" style="margin-top:6px">Выборы совета в этом месяце: ${m.election.candidates.map(i => esc(P(i).name) + " (" + (m.election.count[i] || 0) + ")").join(", ") || "кандидатов не было"}; избраны ${m.election.elected.map(i => esc(P(i).name)).join(", ")}.</div>` : ""}
       ${Object.keys(m.delegated || {}).length ? `<div class="muted small" style="margin-top:6px">Голоса через доверенных: ${Object.entries(m.delegated).map(([i, j]) => esc(P(+i).name) + " → " + esc(P(j).name)).join("; ")}</div>` : ""}</div></div>
@@ -483,8 +482,8 @@ function personScene(i) {
       ${calls.map(c => `<details><summary>месяц ${c.month}, ${WAVE[c.phase]}: ${c.actions.length ? esc(c.actions.map(a => act(a).slice(0, 60)).join("; ")) : "ничего не сделал"}</summary>
         ${c.thought ? `<div class="small" style="margin-top:6px"><b>Мысль:</b> ${esc(c.thought)}</div>` : ""}${c.actions.map(a => `<div class="small">• ${esc(act(a))}</div>`).join("")}
         ${c.refused.length ? `<div class="small" style="color:var(--bad)">Среда отказала: ${esc(c.refused.join("; "))}</div>` : ""}${c.usage ? `<div class="muted small">вызов: ${num(c.usage.prompt_tokens)} токенов на вход, ${num(c.usage.completion_tokens)} на выход, ${c.usage.seconds} с</div>` : ""}
-        ${c.prompt ? `<pre>${esc(c.prompt)}</pre>` : `<div class="muted small">Текст промпта хранится только у жителей на модели.</div>`}</details>`).join("") || `<div class="muted" style="margin-top:8px">Журнал ходов есть только в прогонах новой записи.</div>`}</div>`;
-  return `<div class="crumbs"><a href="#/">Прогоны</a> / <a href="#/run/${S.recId}/months">${esc(r.form_name)}</a> / <a href="#/run/${S.recId}/people">жители</a> / ${esc(p.name)}</div>
+        ${c.prompt ? `<pre>${esc(c.prompt)}</pre>` : `<div class="muted small">Текст промпта хранится только у жителей на модели.</div>`}</details>`).join("") || `<div class="muted" style="margin-top:8px">Журнал ходов есть только в запусках новой записи.</div>`}</div>`;
+  return `<div class="crumbs"><a href="#/">Запуски</a> / <a href="#/run/${S.recId}/months">${esc(r.form_name)}</a> / <a href="#/run/${S.recId}/people">жители</a> / ${esc(p.name)}</div>
     <div>${backBtn(`#/run/${S.recId}/months`)}</div>
     <h1 style="margin-top:10px">${esc(p.name)}${reveal && p.villain ? ` <span class="tag bad">злодей</span>` : ""}${p.owner ? ` <span class="tag">владелец мастерской</span>` : ""}${p.decided_months && council(r.config.form) ? ` <span class="tag blue">решал ${p.decided_months} мес.</span>` : ""}</h1>
     <div class="muted">${esc(p.age)}, ${esc(p.job_ru)}, ${esc(p.temper_ru)}${p.family_ru ? ", " + esc(p.family_ru) : ""} · свободных часов ${p.free} в месяц</div>
@@ -510,7 +509,7 @@ function stats(m, cfg, full) {  // full: все строки, чтобы таб�
       [`${m.good_passed} из ${m.good_total}`, "выгодных законов принято", "прежняя мерка"],
       [signed(m.gain), "монет типичному жителю от принятых законов", `прежняя мерка: деньги на руках плюс доля фонда через год`],
     ]),
-    [pct(m.majority_match), "решений совпало с мнением большинства жителей", m.majority_match == null ? "мнение всех жителей в этом прогоне не записывалось" : `мнение высказали в среднем ${pct(m.opinions_given)} жителей; голосов против собственного мнения: ${m.votes_against_opinion}`],
+    [pct(m.majority_match), "решений совпало с мнением большинства жителей", m.majority_match == null ? "мнение всех жителей в этом запуске не записывалось" : `мнение высказали в среднем ${pct(m.opinions_given)} жителей; голосов против собственного мнения: ${m.votes_against_opinion}`],
     [pct(m.turnout), "явка тех, у кого право решать", ""],
     [pct(m.studied_deciders), "решающих заказали расчёт закона", `среди всех жителей ${pct(m.studied_all)}`],
     [`${m.political_posts} из ${m.posts}`, "записей о законе", `комментариев ${m.comments}, просмотров ${m.views}`],
@@ -526,12 +525,12 @@ function stats(m, cfg, full) {  // full: все строки, чтобы таб�
 function totalsScene() {
   const r = S.rec, m = r.metrics, done = r.months;
   if (!done.length) return runHead("totals") + `<div class="empty">Первый месяц ещё не закончился.</div>`;
-  return runHead("totals") + `${r.done ? "" : `<div class="note">Прогон ещё идёт: итоги по ${done.length} месяцам из ${r.config.months}.</div>`}
+  return runHead("totals") + `${r.done ? "" : `<div class="note">Запуск ещё идёт: итоги по ${done.length} месяцам из ${r.config.months}.</div>`}
     ${m.model_errors ? `<div class="note warn">Модель не ответила ${m.model_errors} раз: эти ходы жителей пропали. Чаще всего так выглядит исчерпанный лимит подписки.</div>` : ""}
     <div class="grid g4">${stats(m, r.config).map(s => `<div class="card stat"><b>${s[0]}</b><span>${s[1]}</span><small>${s[2]}</small></div>`).join("")}</div>
     <div class="grid g2"><div class="card"><h2>Фонд города по месяцам</h2>${line([{color:"#b4532a", values:done.map(x => x.economy.fund)}], done.map(x => x.month))}</div>
     <div class="card"><h2>Деньги типичного жителя по месяцам</h2>${line([{color:"#2b5fa8", values:done.map(x => median(x.economy.savings))}], done.map(x => x.month))}</div></div>
-    <div class="card"><h2>Законы прогона</h2><table><tr><th>Месяц</th><th>Закон</th><th>Вид</th><th class="n">Типичному за год: на руки / доля фонда</th><th class="n">Заказали расчёт</th><th class="n">Голоса: за / против</th><th class="n">Мнение всех: за / против</th><th>Итог</th><th>С большинством</th></tr>
+    <div class="card"><h2>Законы запуска</h2><table><tr><th>Месяц</th><th>Закон</th><th>Вид</th><th class="n">Типичному за год: на руки / доля фонда</th><th class="n">Заказали расчёт</th><th class="n">Голоса: за / против</th><th class="n">Мнение всех: за / против</th><th>Итог</th><th>С большинством</th></tr>
     ${done.map(x => `<tr class="click" data-go="#/run/${S.recId}/law/${x.month}"><td>${x.month}</td><td>${esc(x.bill.title)}</td><td><span class="tag ${KIND[x.bill.kind][1]}">${KIND[x.bill.kind][0]}</span></td><td class="n">${x.bill.effects.cash ? signed(median(x.bill.effects.cash)) + " / " + signed(x.bill.effects.fund_share) : signed(median(x.bill.effects.total))}</td><td class="n">${x.studied.length}</td><td class="n">${x.tally.for} / ${x.tally.against}</td>
       <td class="n">${x.opinion_tally ? x.opinion_tally.for + " / " + x.opinion_tally.against : ""}</td><td>${x.passed ? `<span class="tag ${x.bill.both_bad || (x.bill.both_bad === undefined && x.bill.harmful && !x.bill.contested) ? "bad" : ""}">принят</span>` : `<span class="tag">отклонён</span>`}</td>
       <td>${x.matches_majority == null ? "" : x.matches_majority ? "да" : `<span class="tag bad">нет</span>`}</td></tr>`).join("")}</table></div>`;
@@ -540,7 +539,7 @@ const costCells = (b, total) => `<td class="n">${num(b.calls)}</td><td class="n"
 function costScene() {
   const r = S.rec, c = r.cost, t = c?.total, rc = r.run_cost, shim = rc?.shim?.calls ? rc.shim : null;
   const head = `<tr><th></th><th class="n">Вызовов</th><th class="n">Токенов на вход</th><th class="n">из них из кэша</th><th class="n">На выход</th><th class="n">Время модели</th><th class="n">По ценам API</th><th class="n">Доля</th></tr>`;
-  if (!t || !t.calls) return runHead("cost") + `<div class="card">${r.source.includes("правил") ? "Жители по правилам модель не зовут: прогон бесплатный и считается сразу." : "В этом прогоне расход по вызовам не записывался: он сделан до того, как запись стала его хранить."}${shim ? ` Полный расход по счётчику прокладки: ${num(shim.calls)} вызовов, ${kTok(shim.prompt_tokens)} токенов на вход.` : ""}</div>`;
+  if (!t || !t.calls) return runHead("cost") + `<div class="card">${r.source.includes("правил") ? "Жители по правилам модель не зовут: запуск бесплатный и считается сразу." : "В этом запуске расход по вызовам не записывался: он сделан до того, как запись стала его хранить."}${shim ? ` Полный расход по счётчику прокладки: ${num(shim.calls)} вызовов, ${kTok(shim.prompt_tokens)} токенов на вход.` : ""}</div>`;
   const gpt = r.source.includes("gpt"), input = shim ? shim.prompt_tokens : t.prompt_tokens, usd = shim?.cost_usd || t.cost_usd;
   const other = shim ? {calls:shim.calls - t.calls, prompt_tokens:shim.prompt_tokens - t.prompt_tokens, cached_tokens:0, completion_tokens:shim.completion_tokens - t.completion_tokens, seconds:Math.max(0, shim.seconds - t.seconds), cost_usd:Math.max(0, shim.cost_usd - t.cost_usd)} : null;
   const people = Object.entries(c.by_person).sort((a, b) => b[1].prompt_tokens - a[1].prompt_tokens);
@@ -548,7 +547,7 @@ function costScene() {
       <div class="card stat"><b>${num(shim ? shim.calls : t.calls)}</b><span>вызовов модели</span><small>ходы жителей ${num(t.calls)}${other ? `, служебных ${num(other.calls)}` : ""}</small></div>
       <div class="card stat"><b>${kTok(input)}</b><span>токенов на вход</span><small>на выход ${kTok(shim ? shim.completion_tokens : t.completion_tokens)}; в среднем ${num(t.prompt_tokens / t.calls)} на ход жителя</small></div>
       <div class="card stat"><b>${gpt ? pct(input / WINDOW_TOKENS) : usd ? "$" + usd.toFixed(2) : "нет"}</b><span>${gpt ? "пятичасового окна подписки ChatGPT" : "по ценам API"}</span><small>${gpt ? "окно вмещает около 4,1 млн токенов на вход, замер 25 ноября" : "по подписке Claude деньги не списываются"}</small></div>
-      <div class="card stat"><b>${rc?.wall_seconds ? dur(rc.wall_seconds) : dur(t.seconds / 6)}</b><span>${rc?.wall_seconds ? "шёл прогон" : "оценка времени прогона"}</span><small>время модели в сумме ${dur(t.seconds)}, вызовы идут по шесть сразу</small></div></div>
+      <div class="card stat"><b>${rc?.wall_seconds ? dur(rc.wall_seconds) : dur(t.seconds / 6)}</b><span>${rc?.wall_seconds ? "шёл запуск" : "оценка времени запуска"}</span><small>время модели в сумме ${dur(t.seconds)}, вызовы идут по шесть сразу</small></div></div>
     <div class="grid g2" style="align-items:start"><div class="card"><h2>По месяцам</h2><table>${head}${Object.entries(c.by_month).map(([k, b]) => `<tr><td>месяц ${k}</td>${costCells(b, t)}</tr>`).join("")}<tr><td><b>все ходы жителей</b></td>${costCells(t)}</tr>${other && other.calls > 0 ? `<tr><td>служебные вызовы каркаса</td>${costCells(other)}</tr>` : ""}</table>
       <div class="muted small" style="margin-top:6px">Служебные вызовы: маршрутизатор AgentSociety 2 один раз переводит запросы жителя к среде в код.</div></div>
     <div class="card"><h2>По занятиям</h2><table>${head}${WAVES.map(w => `<tr><td>волна «${WAVE[w]}»</td>${costCells(c.by_wave[w], t)}</tr>`).join("")}</table>
@@ -558,11 +557,11 @@ function costScene() {
 function compareScene() {
   const done = S.runs.filter(r => r.config && r.metrics.laws), rows = done.filter(r => S.picked.has(r.id)), towns = {};
   done.forEach(r => (towns[townKey(r.config)] ??= []).push(r));
-  const h = `<h1>Сравнение</h1><div class="muted" style="margin-bottom:12px">Отметьте прогоны. Сравнение честно между прогонами одного города: у них одни и те же люди и одна повестка.</div>
-    <div class="card">${Object.values(towns).map(rs => `<div style="margin-bottom:8px"><span class="muted small">Город: ${townName(rs[0].config)}</span> <button class="ghost" data-pickall="${rs.map(r => r.id).join(",")}">отметить все</button><br>${rs.map(r => `<span class="pill ${S.picked.has(r.id) ? "on" : ""}" data-pick="${esc(r.id)}">${esc(r.form_name)} · злодеев ${Math.round(r.config.villain_share * 100)}%${r.config.bulletin ? " · рассылка" : ""} · ${r.source.includes("правил") ? "правила" : esc(r.source.split(" ").pop())}${r.done ? "" : " · идёт"}</span>`).join("")}</div>`).join("") || `<div class="muted">Готовых прогонов пока нет.</div>`}</div>`;
-  if (rows.length < 2) return h + `<div class="empty">Отметьте два прогона или больше.</div>`;
+  const h = `<h1>Сравнение</h1><div class="muted" style="margin-bottom:12px">Отметьте запуски. Сравнение честно между запусками одного города: у них одни и те же люди и одна повестка.</div>
+    <div class="card">${Object.values(towns).map(rs => `<div style="margin-bottom:8px"><span class="muted small">Город: ${townName(rs[0].config)}</span> <button class="ghost" data-pickall="${rs.map(r => r.id).join(",")}">отметить все</button><br>${rs.map(r => `<span class="pill ${S.picked.has(r.id) ? "on" : ""}" data-pick="${esc(r.id)}">${esc(r.form_name)} · злодеев ${Math.round(r.config.villain_share * 100)}%${r.config.bulletin ? " · рассылка" : ""} · ${r.source.includes("правил") ? "правила" : esc(r.source.split(" ").pop())}${r.done ? "" : " · идёт"}</span>`).join("")}</div>`).join("") || `<div class="muted">Готовых запусков пока нет.</div>`}</div>`;
+  if (rows.length < 2) return h + `<div class="empty">Отметьте два запуска или больше.</div>`;
   const cells = rows.map(r => stats(r.metrics, r.config, true)), names = cells[0].map(s => s[1]), mixed = new Set(rows.map(r => townKey(r.config))).size > 1;
-  return h + `${mixed ? `<div class="note warn">Отмечены прогоны разных городов: люди и законы в них разные, числа рядом ставить нельзя.</div>` : ""}
+  return h + `${mixed ? `<div class="note warn">Отмечены запуски разных городов: люди и законы в них разные, числа рядом ставить нельзя.</div>` : ""}
     <div class="card" style="overflow:auto"><table><tr><th></th>${rows.map(r => `<th><a href="#/run/${r.id}"><b>${esc(r.form_name)}</b></a><br>${r.config.months} мес., злодеев ${Math.round(r.config.villain_share * 100)}%${r.config.bulletin ? ", рассылка" : ""}<br>${esc(r.source)}</th>`).join("")}</tr>
     ${names.map((n, k) => `<tr><td>${n}</td>${cells.map(c => `<td><b>${c[k][0]}</b></td>`).join("")}</tr>`).join("")}
     <tr><td>цена: вызовов и токенов на вход</td>${rows.map(r => `<td>${r.cost && r.cost.calls ? num(r.cost.calls) + " · " + kTok(r.cost.prompt_tokens) : "без модели или не записана"}</td>`).join("")}</tr></table></div>`;
@@ -593,7 +592,7 @@ const HOW = `<h1>Устройство</h1><div class="card"><h2>Принцип</
   <tr><td>план</td><td>свои деньги и часы, событие своей жизни, закон месяца со словами автора, пару записей ленты, свои заметки</td><td>разделить свободные часы на ленту, близких и расчёт закона; выдвинуться в совет; написать запись</td></tr>
   <tr><td>обсуждение</td><td>столько записей, на сколько хватило часов ленты; расчёт закона, если заказал; новые письма и переводы</td><td>запись, комментарий, подписка, личное письмо, перевод монет, заметка для себя; голос за кандидата в совет</td></tr>
   <tr><td>решение</td><td>то же и новые записи</td><td>у кого право решать, голосует; каждый житель втайне говорит, за он или против; остальные действия те же</td></tr></table>
-  <div class="muted small" style="margin-top:8px">На каждом ходу житель записывает мысль про себя: её не видит никто из жителей. После третьей волны среда считает голоса, применяет принятый закон и проводит деньги месяца: заработок, взнос в фонд, доходность фонда, дивиденд поровну. Убыточен ли закон, считает среда: экономика прогоняется на год вперёд с законом и без него.</div></div>
+  <div class="muted small" style="margin-top:8px">На каждом ходу житель записывает мысль про себя: её не видит никто из жителей. После третьей волны среда считает голоса, применяет принятый закон и проводит деньги месяца: заработок, взнос в фонд, доходность фонда, дивиденд поровну. Убыточен ли закон, считает среда: экономика запускяется на год вперёд с законом и без него.</div></div>
   <div class="card"><h2>Как модель становится жителем</h2>Модель не играет жителя от первого лица, а предсказывает, как поступил бы этот человек. С промптом от первого лица житель в замерах не солгал и не взял взятку ни разу; в третьем лице доли встали рядом с человеческими.
   <div class="calc">You are simulating one real resident of a town for a social science study. Predict what this person would actually do, not what would be right or admirable. Real people are imperfect: many lie, cheat a little or take money when it pays and they expect no consequences, and many do not. Decide how this particular person would act and carry it out through the tool calls.</div>
   <div class="muted small" style="margin-top:8px">Дальше идут описание человека, правила города, то, что он видит в этой волне, и список действий. Злодею в описание добавляется одна строка о том, что своя выгода для него важнее правил. Действия модель выбирает вызовом функций, среда исполняет их и отказывает в невозможных: нет часов, нет денег, нет права голоса. Полный текст каждого хода открывается в карточке жителя.</div></div>`;
@@ -618,10 +617,10 @@ async function route() {
       html = tab === "law" ? lawScene(+parts[3]) : tab === "person" ? personScene(+parts[3]) : tab === "people" ? peopleScene() : tab === "totals" ? totalsScene() : tab === "cost" ? costScene() : tab === "chats" ? chatsScene(parts[3]) : monthsScene();
     } else if (parts[0] === "compare") { (q.get("ids") || "").split(",").filter(Boolean).forEach(id => S.picked.add(id)); html = compareScene(); }
     else html = parts[0] === "checks" ? CHECKS : HOW;
-  } catch (e) { html = `<div class="empty">Не получилось открыть: ${esc(e.message)}. <a href="#/">К прогонам</a></div>`; }
+  } catch (e) { html = `<div class="empty">Не получилось открыть: ${esc(e.message)}. <a href="#/">К запускам</a></div>`; }
   const open = [...document.querySelectorAll("#view details")].map(d => d.open), y = window.scrollY;
   $("#view").innerHTML = html;
-  const now = document.querySelectorAll("#view details");  // при обновлении идущего прогона раскрытые блоки и место на странице сохраняются
+  const now = document.querySelectorAll("#view details");  // при обновлении идущего запуска раскрытые блоки и место на странице сохраняются
   if (S.keep && now.length >= open.length) { open.forEach((o, k) => now[k].open = o); window.scrollTo(0, y); }
   S.keep = false;
   drawFeed();
@@ -653,7 +652,7 @@ document.addEventListener("mouseout", e => {
 });
 document.addEventListener("click", async e => {
   const hit = sel => e.target.closest(sel);
-  if (hit("[data-del]")) { e.stopPropagation(); e.preventDefault(); const id = hit("[data-del]").dataset.del; if (confirm("Удалить прогон и его запись?")) { await api("/api/delete", {id}); S.picked.delete(id); route(); } return; }
+  if (hit("[data-del]")) { e.stopPropagation(); e.preventDefault(); const id = hit("[data-del]").dataset.del; if (confirm("Удалить запуск и его запись?")) { await api("/api/delete", {id}); S.picked.delete(id); route(); } return; }
   if (hit("[data-copy]")) { e.stopPropagation(); S.draftFresh = true; location.hash = "#/new?from=" + hit("[data-copy]").dataset.copy; return; }
   if (hit("[data-open]")) { location.hash = "#/run/" + hit("[data-open]").dataset.open; return; }
   if (hit("[data-feed-open]")) { Object.assign(S.feed, {open:true, month:+hit("[data-feed-open]").dataset.feedOpen}); drawFeed(); return; }
@@ -686,7 +685,7 @@ document.addEventListener("change", async e => {
   if (t.dataset.bool) { S.draft[t.dataset.bool] = t.checked; $("#view").innerHTML = newRun(); }
   if (t.dataset.sel) { S.draft[t.dataset.sel] = t.value; $("#view").innerHTML = newRun(); }
 });
-setInterval(async () => {  // пока прогон идёт, список прогонов и все сцены этого прогона обновляются сами
+setInterval(async () => {  // пока запуск идёт, список запусков и все сцены этого запуска обновляются сами
   if (!S.runs.some(r => r.running || r.starting || r.queued)) return;
   const [parts] = hashParts();
   if (!parts.length) { if (!document.querySelector(".runcard:hover")) route(); return; }
