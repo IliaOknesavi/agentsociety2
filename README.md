@@ -1,237 +1,105 @@
-<div style="text-align: center; background-color: white; padding: 20px; border-radius: 30px;">
-  <img src="./static/agentsociety_logo.png" alt="AgentSociety Logo" width="200" style="display: block; margin: 0 auto;">
-  <h1 style="color: black; margin: 0; font-size: 3em;">AgentSociety: LLM Agents in Society</h1>
-</div>
+# Формы власти на одном обществе LLM-агентов
 
-<p align="center">
-  <a href="./README.md">English</a> · <a href="./README_zh.md">中文</a>
-</p>
+Проект АИСТ (ИТМО), тема «Сообщества LLM-агентов: моделирование социальной динамики». Одно и то же население
+агентов живёт под разными формами власти, правила мира при этом одинаковы для всех: время, деньги, лента,
+знание о последствиях законов. Форма власти меняет одно: у кого право решать.
 
-<p align="center">
-  <a href="https://github.com/tsinghua-fib-lab/AgentSociety/stargazers">
-    <img src="https://img.shields.io/github/stars/tsinghua-fib-lab/AgentSociety?style=social" alt="GitHub Stars">
-  </a>
-  <a href="https://github.com/tsinghua-fib-lab/AgentSociety/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License">
-  </a>
-  <a href="https://pypi.org/project/agentsociety2/">
-    <img src="https://img.shields.io/pypi/v/agentsociety2.svg" alt="PyPI (v2)">
-  </a>
-  <a href="https://pypi.org/project/agentsociety/">
-    <img src="https://img.shields.io/pypi/v/agentsociety.svg?label=pypi%20(v1)" alt="PyPI (v1)">
-  </a>
-</p>
+Репозиторий это копия [AgentSociety 2](https://github.com/tsinghua-fib-lab/AgentSociety) (Tsinghua FIB Lab).
+Файлы каркаса не изменены, наш код добавлен отдельными модулями. Исходное описание каркаса:
+[README.agentsociety.md](README.agentsociety.md).
 
-<p align="center">
-  <a href="https://agentsociety2.readthedocs.io/">
-    <img src="https://img.shields.io/badge/docs-v2%20(recommended)-brightgreen" alt="Documentation v2">
-  </a>
-  <a href="https://agentsociety.readthedocs.io/">
-    <img src="https://img.shields.io/badge/docs-v1%20(legacy)-lightgrey" alt="Documentation v1">
-  </a>
-</p>
+## Что внутри
 
----
+| Часть | Что делает | Где |
+|---|---|---|
+| мир | месяц из трёх волн, бюджет времени жителя, лента, письма, переводы, фонд города, один закон в месяц с расчётом на год и три года, четыре формы власти, раунд выборов совета по округам, запись и метрики; от каркаса не зависит | `packages/agentsociety2/agentsociety2/contrib/env/city_rails/world.py` |
+| среда | обёртка мира для AgentSociety 2 | `.../contrib/env/city_rails/env.py` |
+| житель | промпт (рамка предсказания в третьем лице), одно действие `act` на волну, разбор ответа | `.../contrib/env/city_rails/resident.py`, `.../contrib/agent/resident_agent.py` |
+| модели по подписке | локальная прокладка: запросы каркаса уходят в Claude (`claude -p`) или ChatGPT без ключей API | `polity/llm/subscription_shim.py`, `polity/run_with_subscription.sh` |
+| запуск и разбор | запуск из командной строки и локальное приложение | `polity/city/run_city.py`, `polity/city/app.py` |
+| данные о людях | жители из опроса Twin-2K-500 с их собственными ответами | `polity/city/export_twins.py` |
 
-AgentSociety is a family of frameworks for LLM-based agent simulation and executable social science research. It lets researchers turn questions, hypotheses, and interventions into running experiments, with AI Social Scientists orchestrating the research workflow and Silicon Participants living in the simulation.
+Формы власти: `direct` (голосуют все), `liquid` (все, с отзывным делегированием голоса), `council` (выборный
+совет, по одному члену от округа), `lottery` (совет по жребию). При одном зерне люди и повестка законов одинаковы
+во всех формах, поэтому запуски одного города можно сравнивать.
 
-**Papers:**
+## Установка
 
-- **AgentSociety 2** (recommended): [arXiv:2607.11895](https://arxiv.org/abs/2607.11895)
-- **AgentSociety** (v1): [arXiv:2502.08691](https://arxiv.org/abs/2502.08691)
-
-Machine-readable citations: [CITATION.cff](./CITATION.cff) · [citations.bib](./citations.bib)
-
-## Star History
-
-<a href="https://www.star-history.com/#tsinghua-fib-lab/AgentSociety&Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=tsinghua-fib-lab/AgentSociety&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=tsinghua-fib-lab/AgentSociety&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=tsinghua-fib-lab/AgentSociety&type=Date" />
- </picture>
-</a>
-
-## Packages
-
-This repository contains two main packages:
-
-### AgentSociety 2 (Recommended)
-
-[![PyPI Version](https://img.shields.io/pypi/v/agentsociety2.svg)](https://pypi.org/project/agentsociety2/)
-
-**AgentSociety 2** is an LLM-native research environment where AI Social Scientists and Silicon Participants collaborate: research skills cover the loop from literature retrieval to analysis, while simulation runs on a scalable Ray-based runtime.
+Python 3.11-3.13 и [uv](https://docs.astral.sh/uv/).
 
 ```bash
-pip install agentsociety2
+git clone https://github.com/IliaOknesavi/agentsociety2.git
+cd agentsociety2
+uv sync --package agentsociety2
 ```
 
-**Features:**
+Модели берутся по подписке, ключи API не нужны:
 
-- **LLM-Native Design**: Built from the ground up for LLM-driven agents
-- **Flexible Environment System**: Modular environment components with hot-pluggable tools
-- **Multiple Reasoning Patterns**: CodeGen (default), ReAct, Plan-Execute, Two-Tier, and Search routers
-- **Scalable Execution**: Agents are workspace-bound stateless records driven by Ray Tasks, with env / LLM clients / trace / replay handles behind a single `ServiceProxy`
-- **Research Skills**: Literature search, hypothesis generation, experiment design, and data analysis (paper writing is provided by the external `paper-toolkit` plugin)
-- **Experiment Replay**: Catalog-driven JSONL replay with DuckDB-powered reads and distributed tracing
-- **MCP Support**: Model Context Protocol integration for tool extensibility
+- **Claude**: установленный и авторизованный [Claude Code](https://claude.com/claude-code), команда `claude` в `PATH`;
+- **ChatGPT**: один вход по коду устройства, подробно в [polity/README.md](polity/README.md).
 
-**Architecture** — from the social simulation platform in AgentSociety 1 to the integrated dual-role research environment of AgentSociety 2, where AI Social Scientists implement experiments and provide feedback while Silicon Participants live in the simulation ([paper](https://arxiv.org/abs/2607.11895), Figure 2):
+Если модель доступна только через прокси, задайте `HTTPS_PROXY` и `HTTP_PROXY` в окружении запуска:
+прокладка и CLI модели берут прокси оттуда.
 
-![AgentSociety 2 integrated dual-role research environment](extension/resources/walkthrough/images/agentsociety2-dual-role.png)
+### Жители из опроса
 
-**Documentation:** [agentsociety2.readthedocs.io](https://agentsociety2.readthedocs.io/)
-
-**Source:** [packages/agentsociety2/](./packages/agentsociety2/)
-
-### AgentSociety 1.x (Legacy)
-
-[![PyPI Version](https://img.shields.io/pypi/v/agentsociety.svg)](https://pypi.org/project/agentsociety/)
-
-**AgentSociety 1.x** is the original city simulation framework with gRPC-based environment integration.
+По умолчанию жители условные: возраст, занятие и характер раздаются по зерну. Чтобы жители были людьми из опроса
+Twin-2K-500 с их собственными ответами, выгрузку делают один раз интерпретатором соседнего проекта polity-sim, где
+лежит набор данных:
 
 ```bash
-pip install agentsociety
+cd ../polity-sim && .venv/bin/python ../agentsociety2/polity/city/export_twins.py
 ```
 
-**Features:**
+Выгрузка ложится в `polity/city/data/twins.json` и в git не попадает.
 
-- City-scale simulation with Ray distributed computing
-- Urban environment modules (mobility, economy, social)
-- Multi-agent coordination and communication
+## Запуск
 
-**Documentation:** [agentsociety.readthedocs.io](https://agentsociety.readthedocs.io/)
-
-**Source:** [packages/agentsociety/](./packages/agentsociety/)
-
-## Other Packages
-
-- **[agentsociety-community](./packages/agentsociety-community/)**: Community contributions for custom agents and blocks
-- **[agentsociety-benchmark](./packages/agentsociety-benchmark/)**: Benchmarking utilities for agent evaluation
-
-## Tools
-
-- **AI Social Scientist** ([extension/](./extension/)): the VS Code workbench of AgentSociety 2 — a conversational research assistant over the workspace, experiment configuration and runs, replay, skill marketplace, and MCP tool configuration. See the [user guide](https://agentsociety2.readthedocs.io/en/latest/user_guide.html).
-- **[frontend/](./frontend/)**: the React web console. Some routes retain older API contracts; the AgentSociety 2 research workbench is provided by the VS Code extension.
-
-## Project Structure
-
-```
-AgentSociety/
-├── packages/
-│   ├── agentsociety2/      # v2.x - Modern LLM-native platform (recommended)
-│   │   └── examples/       # AS2 onboarding examples (basics / games / advanced)
-│   ├── agentsociety/       # v1.x - Legacy city simulation
-│   │   └── docs/           # v1 Sphinx documentation (legacy)
-│   ├── agentsociety-community/
-│   └── agentsociety-benchmark/
-├── frontend/               # React web console
-├── extension/              # AI Social Scientist VS Code extension (AS2 workbench)
-└── examples/               # Demo experiments (v1 classics + v2/daily_mobility)
-```
-
-## Quick Start
-
-### AgentSociety 2
-
-Before running the example, configure the LLM environment variables:
+Проверка мира без модели, за секунды:
 
 ```bash
-export AGENTSOCIETY_LLM_API_KEY="your-api-key"
-export AGENTSOCIETY_LLM_API_BASE="https://api.openai.com/v1"
-export AGENTSOCIETY_LLM_MODEL="gpt-5.5"
+.venv/bin/python packages/agentsociety2/agentsociety2/contrib/env/city_rails/world.py
 ```
 
-```python
-import asyncio
-from datetime import datetime
-from pathlib import Path
-from agentsociety2.env import CodeGenRouter
-from agentsociety2.contrib.env import SimpleSocialSpace
-from agentsociety2.society import AgentSociety
+Приложение: запуск новых симуляций, ход по месяцам, лента, выборы, карточки жителей и законов, сравнение
+запусков, расход по месяцам и волнам. Открывается на http://127.0.0.1:8790.
 
-async def main():
-    # Agents are declared as metadata (specs); AgentSociety creates their workspaces in init().
-    agent_specs = [{"id": 1, "profile": {"name": "Alice"}, "config": {}}]
-    env = CodeGenRouter(env_modules=[SimpleSocialSpace(agent_id_name_pairs=[(1, "Alice")])])
-    society = AgentSociety(
-        agent_specs=agent_specs,
-        agent_class_name="PersonAgent",
-        env_router=env,
-        start_t=datetime.now(),
-        run_dir=Path("run"),
-    )
-    await society.init()
-    response = await society.ask("What's your name?")
-    print(response)
-    await society.close()
-
-asyncio.run(main())
+```bash
+.venv/bin/python polity/city/app.py
 ```
 
-### AgentSociety 1.x
+Тот же запуск без экрана:
 
-```python
-from agentsociety.simulation import AgentSociety
-
-# See packages/agentsociety/README.md for usage
+```bash
+MODEL=chatgpt/gpt-6.2-sol polity/run_with_subscription.sh polity/city/run_city.py \
+  --form council --residents 12 --months 6 --villains 0.15 --seed 1 --population twins
 ```
 
-## Requirements
+| Параметр | Что задаёт |
+|---|---|
+| `MODEL` | `haiku`, `sonnet` через Claude Code; `chatgpt/<модель>` через подписку ChatGPT |
+| `--form` | форма власти |
+| `--residents`, `--months` | размер города и длина запуска |
+| `--villains` | доля жителей со склонностью «своя выгода важнее правил» |
+| `--seed` | зерно: при одном зерне люди и законы одинаковы во всех формах |
+| `--population` | `synthetic` или `twins` |
+| `--bulletin` | город рассылает расчёт закона всем жителям |
+| `--no-hall` | без закрытого канала тех, кто решает |
 
-- Python 3.11 – 3.13
-- An LLM API key (OpenAI, Anthropic, or any litellm-supported provider)
+Записи запусков пишутся в `polity/city/runs/<имя>.json`, расход рядом в `<имя>.cost.json`. Приложение
+показывает их само.
 
-## Contributors
+## Расход
 
-Thank you to everyone who has contributed to this project:
+| Модель | Входных токенов на вызов | Время вызова | Запуск 12 жителей на 6 месяцев с выборами |
+|---|---|---|---|
+| gpt-6.2-sol | около 2 000 | 8-10 с | около 270 вызовов, 0,5 млн токенов, 35 минут |
+| Claude Haiku | около 9 000 | 25-50 с | около 270 вызовов, 2,5 млн токенов |
+| Claude Sonnet | около 7 000 | 10-14 с | на полных запусках не помещается в подписку |
 
-<a href="https://github.com/tsinghua-fib-lab/AgentSociety/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=tsinghua-fib-lab/AgentSociety" alt="Contributors" />
-</a>
+Пятичасовое окно ChatGPT Plus вмещает около 4,1 млн входных токенов. Вызовы сейчас идут по одному.
 
-## License
+## Подробнее
 
-AgentSociety is licensed under the Apache License Version 2.0 except for the `packages/agentsociety/agentsociety/commercial` folder. See the [LICENSE](LICENSE) file for details.
-
-## Citation
-
-If you use AgentSociety in your research, please cite the relevant paper(s). Prefer **AgentSociety 2** when using the current platform (`agentsociety2`); cite **AgentSociety (v1)** when referring to the original large-scale city simulator.
-
-See also [CITATION.cff](./CITATION.cff) and [citations.bib](./citations.bib).
-
-**AgentSociety 2** ([arXiv:2607.11895](https://arxiv.org/abs/2607.11895)):
-
-```bibtex
-@misc{piao2026agentsociety2,
-  title        = {{AgentSociety} 2: An Integrated Research Environment for Executable Social Science},
-  author       = {Jinghua Piao and Jun Zhang and Haoyu Huang and Keming Zhang and Jing Yi Wang and Xinran Zhao and Songwei Li and Boyuan Sun and Jiayi Chang and Fengli Xu and Chunyan Wang and Fang Zhang and Ke Rong and Jun Su and Tianguang Meng and Yi Liu and Qingguo Meng and Yu Wang and Yong Li},
-  year         = {2026},
-  eprint       = {2607.11895},
-  archiveprefix= {arXiv},
-  primaryclass = {cs.CY},
-  doi          = {10.48550/arXiv.2607.11895},
-  url          = {https://arxiv.org/abs/2607.11895},
-}
-```
-
-**AgentSociety (v1)** ([arXiv:2502.08691](https://arxiv.org/abs/2502.08691)):
-
-```bibtex
-@misc{piao2025agentsociety,
-  title        = {{AgentSociety}: Large-Scale Simulation of {LLM}-Driven Generative Agents Advances Understanding of Human Behaviors and Society},
-  author       = {Jinghua Piao and Yuwei Yan and Jun Zhang and Nian Li and Junbo Yan and Xiaochong Lan and Zhihong Lu and Zhiheng Zheng and Jing Yi Wang and Di Zhou and Chen Gao and Fengli Xu and Fang Zhang and Ke Rong and Jun Su and Yong Li},
-  year         = {2025},
-  eprint       = {2502.08691},
-  archiveprefix= {arXiv},
-  primaryclass = {cs.SI},
-  doi          = {10.48550/arXiv.2502.08691},
-  url          = {https://arxiv.org/abs/2502.08691},
-}
-```
-
-## Contact
-
-- **Issues**: [GitHub Issues](https://github.com/tsinghua-fib-lab/AgentSociety/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/tsinghua-fib-lab/AgentSociety/discussions)
-- **Email**: agentsociety.fiblab2025@gmail.com
+- [polity/README.md](polity/README.md): прокладка к моделям, что каждый путь добавляет к запросу, переменные окружения;
+- [polity/city/README.md](polity/city/README.md): устройство месяца, законы, выборы, сцены приложения, чего пока нет.
