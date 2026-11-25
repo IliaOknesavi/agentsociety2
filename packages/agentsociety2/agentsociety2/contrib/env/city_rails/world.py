@@ -16,6 +16,7 @@ import json
 import random
 import statistics
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 FORMS = {"direct": "Прямое голосование", "council": "Выборный совет", "lottery": "Совет по жребию"}
 PHASES = ("plan", "talk", "decide")
@@ -202,7 +203,7 @@ class City:
                 jobs[k] = next(j for j in JOBS if j[4])
         villains = set(rng.sample(range(n), round(n * c.villain_share)))
         self.people = []
-        twins = rng.sample(json.loads(open(c.twins_path, encoding="utf-8").read()), n) if c.population == "twins" else []
+        twins = rng.sample(json.loads(Path(c.twins_path).read_text(encoding="utf-8")), n) if c.population == "twins" else []
         women, men = [x for x in NAMES if x in FEMALE], [x for x in NAMES if x not in FEMALE]
         for i, t in enumerate(twins):  # житель из опроса: занятие, доход и взгляды его собственные, имя условное
             en, ru, free, owner = WORK[t["employment"]]
