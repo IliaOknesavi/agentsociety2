@@ -244,6 +244,7 @@ class City:
         self.transfers: list[dict] = []
         self.messages: list[dict] = []
         self.follows: dict[int, set[int]] = {i: set() for i in range(n)}
+        self.notes: dict[int, list[str]] = {i: [] for i in range(n)}  # память жителя: его заметки для себя
         self.months: list[dict] = []
         self.spent: dict[int, float] = {}
         self._views: dict = {}
@@ -377,6 +378,7 @@ class City:
                      "your_gain": ({"over_horizon": bill["effects"]["total"][i], "first_month_cash": bill["effects"]["now"][i]} if i in cur["studied"] else None),
                      "you_benefit": i in bill["beneficiaries"], "votes_cast": len(cur["votes"])},
             "feed": feed, "headlines": headlines,
+            "memory": list(self.notes[i]),
             "life": random.Random(self.cfg.seed * 100003 + i * 1009 + self.month).choice(LIFE),
             "my_posts": [q["text"] for q in self.posts if q["author"] == i and q["month"] >= self.month - 1][-3:],
             "replies_to_me": [{"post_id": q["id"] + POST0, "comments": [{"author": self.people[c["author"]]["name"], "text": c["text"]} for c in q["comments"][-3:]]} for q in mine],
@@ -448,6 +450,9 @@ class City:
                 self._event(i, "candidate")
             return None
         cur["hours"].setdefault(i, {"feed": 0, "people": 0, "study": 0, "public": 0.0})
+        if kind == "remember":
+            self.notes[i] = (self.notes[i] + [f"month {self.month}: {str(a['text']).strip()[:200]}"])[-4:]
+            return None
         if kind == "post":
             text = str(a["text"]).strip()[:600]
             if not text or not self._spend(i, COST["post"]):
@@ -554,7 +559,7 @@ class City:
         people = [dict(p, money=round(self.eco.savings[p["id"]]), views=views.get(p["id"], 0),
                        followers=sum(p["id"] in f for f in self.follows.values()),
                        posts=sum(q["author"] == p["id"] for q in self.posts),
-                       decided_months=sum(p["id"] in m["deciders"] for m in months)) for p in self.people]
+                       decided_months=sum(p["id"] in m["deciders"] for m in months), notes=self.notes[p["id"]]) for p in self.people]
         clean = lambda q: {k: v for k, v in q.items() if k not in ("seen", "jitter")}
         return {"config": asdict(self.cfg), "form_name": FORMS[self.cfg.form], "seats": self.seats, "source": self.source,
                 "done": self.done, "month": self.month, "phase": PHASES[self.phase], "people": people, "months": months,

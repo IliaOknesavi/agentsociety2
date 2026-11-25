@@ -50,6 +50,8 @@ def user_prompt(view: dict) -> str:
     if view["last_month"]:
         last = view["last_month"]
         lines.append(f"Last month the law «{last['law']}» was {'passed' if last['passed'] else 'rejected'}: {last['tally']['for']} for, {last['tally']['against']} against.")
+    if view["memory"]:
+        lines.append("What this person noted for themselves earlier: " + " | ".join(view["memory"]))
     lines.append(f"In this person's own life this month: {view['life']}.")
     if view["my_posts"]:
         lines.append("This person's own recent posts (no need to repeat them): " + " | ".join(view["my_posts"]))
@@ -112,6 +114,7 @@ def tools(view: dict) -> list[dict]:
         _fn("send_message", "Send a private message to a resident.", {"to_id": number, "text": text}, ["to_id", "text"]),
         _fn("send_coins", "Send own coins to a resident.", {"to_id": number, "amount": {"type": "integer"}, "note": text}, ["to_id", "amount", "note"]),
     ]
+    out.append(_fn("remember", "Keep one short line in mind for the coming months: a promise, a debt, an impression of someone. Use only when there is something worth keeping.", {"text": text}, ["text"]))
     if view["phase"] == "decide" and view["me"]["can_vote"]:
         out.append(_fn("vote", "Vote on this month's law.", {"choice": {"type": "string", "enum": ["for", "against", "abstain"]}}, ["choice"]))
     if view["election"] and view["election"]["stage"] == "vote" and view["election"]["candidates"]:
