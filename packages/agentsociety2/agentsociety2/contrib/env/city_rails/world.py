@@ -951,5 +951,5 @@ if __name__ == "__main__":  # самопроверка: деньги сходя�
         assert form != "liquid" or any(x["delegated"] for x in r["months"]), "в форме с делегированием никто не передал голос"
         assert all(sum(x["opinion_tally"].values()) == 20 for x in r["months"]) and m["majority_match"] is not None
         assert form != "council" or (r["elections"] and all(len(e["elected"]) == 5 for e in r["elections"]) and len(r["elections"]) == 1), "совет избирается по округам"
-        assert r["hall"] and all(set(x["viewers"]) <= set(r["months"][x["month"] - 1]["deciders"]) for x in r["hall"]), "зал читают только те, кто решает"
+        assert (form in EVERYONE) == (not r["hall"]) and all(set(x["viewers"]) <= set(r["months"][x["month"] - 1]["deciders"]) for x in r["hall"]), "зал читают только те, кто решает"
         print(f"{form:8} принято {m['passed']}/{m['laws']}, убыточных {m['harmful_passed']}/{m['harmful_total']}, типичному на руки {m['gain']:+} $, фонд на жителя {m['gain_fund']:+} $, записей {m['posts']}, просмотров {m['views']}, переводов {m['transfers']}")
